@@ -1,5 +1,7 @@
 node_modules/
 dist/
+voices/
+public/models/vosk-model.tar.gz
 test-results/
 playwright-report/
 

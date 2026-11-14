@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowUpRight,
@@ -24,6 +24,9 @@ import {
 } from 'lucide-react';
 import { MissionConsole } from './components/MissionConsole';
 import { VoiceCheckIn } from './components/VoiceCheckIn';
+import VoiceAssistant from './voice/VoiceAssistant';
+import { configureVoiceDemo } from './voice/currentDemo';
+import type { InvestigationResponse } from './voice/types';
 import { Panel, Badge } from './components/ui';
 import {
   crews,
@@ -56,8 +59,21 @@ function App() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [flags, setFlags] = useState([false, false, false, false]);
+  const [voiceResponse, setVoiceResponse] = useState<InvestigationResponse | null>(null);
 
   const crew = profiles.find((c) => c.id === crewId)!;
+  configureVoiceDemo({ profiles, inventory, save: (next) => {
+    setProfiles(previous => previous.map(item => item.id === next.id ? next : item));
+    setFlags(previous => [previous[0], next.bp !== null, previous[2], previous[3]]);
+  } });
+  useEffect(() => {
+    const onVoiceResult = (event: Event) => {
+      const detail = (event as CustomEvent<{ response: InvestigationResponse }>).detail;
+      if (detail?.response) setVoiceResponse(detail.response);
+    };
+    window.addEventListener('mednav:voice-investigation', onVoiceResult);
+    return () => window.removeEventListener('mednav:voice-investigation', onVoiceResult);
+  }, []);
 
   const go = (p: number) => {
     setPage(p);
@@ -66,6 +82,7 @@ function App() {
   };
 
   const handleSelectCrew = (nextId: string) => {
+    setVoiceResponse(null);
     setCrewId(nextId);
     const nextCrew = profiles.find((c) => c.id === nextId)!;
     setFlags((f) => [f[0], nextCrew.bp !== null, f[2], f[3]]);
@@ -185,6 +202,7 @@ function App() {
               );
             }}
             page={page}
+            voiceResponse={voiceResponse}
             go={go}
           />
         )}
@@ -214,6 +232,8 @@ function App() {
             setCategory={setCategory}
           />
         )}
+
+        <VoiceAssistant crew={crew.id} onNavigate={(target) => go(({ dashboard: 0, crew: 0, trends: 0, investigation: 2, inventory: 4, reports: 5, research: 3, settings: 0 } as const)[target])} />
 
         <footer>
           <span>MEDNAV · ASTRONAUT HEALTH MONITORING</span>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUpRight,
   ArrowLeft,
@@ -41,6 +41,8 @@ import {
   type AnatomySex,
 } from '../data/anatomy';
 import { BodyViewer } from './BodyViewer';
+import type { InvestigationResponse } from '../voice/types';
+import { asVoiceResponse } from '../voice/currentDemo';
 import '../console.css';
 
 type Props = {
@@ -52,6 +54,7 @@ type Props = {
   setFlags: (f: boolean[]) => void;
   page: number;
   go: (p: number) => void;
+  voiceResponse: InvestigationResponse | null;
 };
 
 const labels = [
@@ -209,6 +212,7 @@ export function MissionConsole({
   setFlags,
   page,
   go,
+  voiceResponse,
 }: Props) {
   const [selected, setSelected] = useState<keyof typeof evidence>('bp');
   const [drawer, setDrawer] = useState(false);
@@ -221,7 +225,19 @@ export function MissionConsole({
   const [modelStatus, setModelStatus] = useState<AnatomyModelStatus>('loading');
 
   // Purely render the engine/fixture response — no separate medical decision logic in the frontend.
-  const response = getScenario(flags);
+  const response = voiceResponse && [2, 5].includes(page)
+    ? voiceResponse as unknown as ScenarioResponse
+    : getScenario(flags);
+  useEffect(() => {
+    if (page !== 2 || !response) return;
+    const [sys, dia] = crew.bp?.split(' / ').map(Number) ?? [null, null];
+    window.dispatchEvent(new CustomEvent('mednav:investigation-result', { detail: {
+      response: asVoiceResponse(response, {
+        resting_hr_bpm: crew.hr, sleep_hours: crew.sleep,
+        systolic_bp_mm_hg: sys, diastolic_bp_mm_hg: dia,
+      }), mode: 'demo',
+    } }));
+  }, [page, response, crew]);
   const view = formatInvestigationView(response);
 
   const focus = evidence[selected];

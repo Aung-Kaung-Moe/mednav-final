@@ -7,12 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from faster_whisper import WhisperModel
 import uvicorn
 
-MODEL_ID = os.environ.get("MEDNAV_WHISPER_MODEL", "Systran/faster-whisper-small.en")
+MODEL_ID = os.environ.get("MEDNAV_WHISPER_MODEL", "Systran/faster-whisper-tiny.en")
 
 CHECKIN_HOTWORDS = (
     "headache, dizziness, fatigue, nausea, muscle discomfort, "
     "no symptoms, heart rate, blood pressure, sleep, systolic, diastolic, "
-    "bpm, hours, mmHg, unknown"
+    "bpm, hours, mmHg, unknown, Hey MEDNAV, MEDNAV, start health check, "
+    "read my recommendation, what is my heart rate, what data is missing"
 )
 
 app = FastAPI(title="MEDNAV Local Voice-to-Text Service")
@@ -71,6 +72,7 @@ def voice_status():
 async def transcribe_audio(
     request: Request,
     file: UploadFile | None = File(default=None),
+    segment_mode: bool = False,
 ):
     if file is not None:
         raw_bytes = await file.read()
@@ -85,11 +87,11 @@ async def transcribe_audio(
         segments, info = whisper_model.transcribe(
             audio_input,
             language="en",
-            beam_size=5,
+            beam_size=3 if segment_mode else 5,
             temperature=0.0,
             condition_on_previous_text=False,
             hotwords=CHECKIN_HOTWORDS,
-            vad_filter=True,
+            vad_filter=not segment_mode,
             vad_parameters={
                 "threshold": 0.35,
                 "min_silence_duration_ms": 500,
