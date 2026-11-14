@@ -291,6 +291,10 @@ function Observation({ crew }: { crew: Crew }) {
         ['Heart Rate:', value(crew.hr, ' bpm')],
         ['Sleep Duration:', value(crew.sleep, ' hours')],
         ['Blood Pressure:', value(crew.bp, ' mmHg')],
+        ['Space Radiation (Daily):', value(crew.radiationDailyMsv, ' mSv/day')],
+        ['Microgravity Exercise (ARED):', value(crew.countermeasureMin, ' min')],
+        ['Body Mass (SLAMMD):', value(crew.bodyMassKg, ' kg')],
+        ['Ocular / SANS Check:', crew.ocularCheck ?? 'Unknown'],
         ['Reported Symptoms:', crew.symptoms.join(', ') || 'None reported'],
       ].map(([k, v]) => (
         <div className="telemetry-kv-row" key={k}>
@@ -316,6 +320,9 @@ function CheckIn({
   const [sleep, setSleep] = useState(crew.sleep?.toString() || '');
   const [sys, setSys] = useState(crew.bp?.split(' / ')[0] || '');
   const [dia, setDia] = useState(crew.bp?.split(' / ')[1] || '');
+  const [rad, setRad] = useState(crew.radiationDailyMsv?.toString() || '');
+  const [ared, setAred] = useState(crew.countermeasureMin?.toString() || '');
+  const [mass, setMass] = useState(crew.bodyMassKg?.toString() || '');
   const [review, setReview] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -326,6 +333,9 @@ function CheckIn({
     hr: hr === '' ? null : Number(hr),
     sleep: sleep === '' ? null : Number(sleep),
     bp: sys && dia ? `${sys} / ${dia}` : null,
+    radiationDailyMsv: rad === '' ? null : Number(rad),
+    countermeasureMin: ared === '' ? null : Number(ared),
+    bodyMassKg: mass === '' ? null : Number(mass),
   };
 
   return (
@@ -445,7 +455,7 @@ function CheckIn({
               </fieldset>
 
               <div className="vitals-section-head">
-                <strong>Vital Signs</strong>
+                <strong>Vital Signs, Space Radiation &amp; Microgravity</strong>
                 <span>Unavailable measurements remain Unknown</span>
               </div>
 
@@ -455,6 +465,9 @@ function CheckIn({
                   ['Sleep (hours)', sleep, setSleep],
                   ['Systolic (mmHg)', sys, setSys],
                   ['Diastolic (mmHg)', dia, setDia],
+                  ['Space radiation (mSv/day)', rad, setRad],
+                  ['Microgravity exercise ARED (min)', ared, setAred],
+                  ['Body mass SLAMMD (kg)', mass, setMass],
                 ].map(([label, v, change], i) => {
                   const isUnknown = (v as string) === '';
                   return (
@@ -469,7 +482,7 @@ function CheckIn({
                           className="unknown-option"
                           aria-pressed={isUnknown}
                           onClick={() => {
-                            if (i >= 2) {
+                            if (i === 2 || i === 3) {
                               setSys('');
                               setDia('');
                             } else {
@@ -483,7 +496,7 @@ function CheckIn({
                       <input
                         id={`field-${i}`}
                         type="number"
-                        min={i === 1 ? 0 : 0.01}
+                        min={i === 1 || i === 5 ? 0 : 0.01}
                         max={i === 1 ? 24 : undefined}
                         step="any"
                         value={v as string}

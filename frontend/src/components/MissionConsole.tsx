@@ -11,6 +11,9 @@ import {
   Activity,
   ShieldAlert,
   Package,
+  Radiation,
+  Dumbbell,
+  Eye,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -42,23 +45,23 @@ const labels = [
 
 const evidence = {
   readings: {
-    title: 'Recorded observations',
-    text: 'Heart rate and sleep compared against personal baseline.',
+    title: 'Recorded vital & environmental observations',
+    text: 'Heart rate, sleep, radiation dosimetry, and microgravity countermeasure load compared against personal baseline.',
     links: ['known', 'next'],
   },
   bp: {
-    title: 'Blood-pressure evidence',
-    text: 'Record state and monitor availability are tracked separately.',
+    title: 'Missing measurements (BP & Ocular)',
+    text: 'Unmeasured blood pressure, radiation, or microgravity ocular checks remain explicitly Unknown and are tracked separately from equipment state.',
     links: ['unknown', 'resource', 'next'],
   },
   resources: {
-    title: 'Resource dependency',
-    text: 'Unavailable equipment blocks only checks that require it.',
+    title: 'Onboard equipment dependency',
+    text: 'Unavailable equipment (such as BP monitor or Ultrasound unit) blocks only checks that require it.',
     links: ['resource', 'next'],
   },
   next: {
     title: 'Next step selection',
-    text: 'Selected from verified mission checklists.',
+    text: 'Selected deterministically from verified mission checklists.',
     links: ['known', 'unknown', 'resource', 'next'],
   },
 };
@@ -76,6 +79,7 @@ export function MissionConsole({
   const [selected, setSelected] = useState<keyof typeof evidence>('bp');
   const [drawer, setDrawer] = useState(false);
   const [dayIndex, setDayIndex] = useState(history.length - 1);
+  const [trendMode, setTrendMode] = useState<'hr' | 'rad' | 'ug'>('hr');
 
   const candidate = getScenario(flags);
   const response = candidate?.next_check?.equipment.some(
@@ -90,9 +94,16 @@ export function MissionConsole({
   const bp = flags[1] ? (crew.bp ?? response?.observations.bp ?? null) : null;
   const monitor = flags[0];
 
+  const dosimeterAvailable =
+    inventory.find((e) => e.name === 'Personal radiation dosimeter')?.available ?? true;
+  const ultrasoundAvailable =
+    inventory.find((e) => e.name === 'Ultrasound unit')?.available ?? false;
+
   const missing = [
     crew.hr === null ? 'Heart rate' : null,
     crew.sleep === null ? 'Sleep' : null,
+    crew.radiationDailyMsv === null ? 'Daily radiation dose' : null,
+    crew.ocularCheck === null ? 'Microgravity ocular check' : null,
     ...(response?.missing_data ?? ['No scenario record']),
   ].filter(Boolean);
 
@@ -112,11 +123,26 @@ export function MissionConsole({
   const activeHistoryDay = history[dayIndex] ?? history[history.length - 1];
   const dayHr = activeHistoryDay[crewKey];
   const daySleep = activeHistoryDay[`s${crewKey}` as 'sa' | 'sb' | 'sc'];
+  const dayRad = activeHistoryDay[`r${crewKey}` as 'ra' | 'rb' | 'rc'];
+  const dayCounter = activeHistoryDay[`c${crewKey}` as 'ca' | 'cb' | 'cc'];
 
   // ---------------------------------------------------------------------------
-  // VIEW 0: ASTRONAUT HEALTH OVERVIEW
+  // VIEW 0: ASTRONAUT HEALTH OVERVIEW (WITH SPACE RADIATION & MICROGRAVITY)
   // ---------------------------------------------------------------------------
   if (page === 0) {
+    const trendDataKey =
+      trendMode === 'hr'
+        ? crewKey
+        : trendMode === 'rad'
+        ? (`r${crewKey}` as const)
+        : (`c${crewKey}` as const);
+    const trendColor =
+      trendMode === 'hr'
+        ? '#5B9BD5'
+        : trendMode === 'rad'
+        ? '#F5A623'
+        : '#9D7BFF';
+
     return (
       <div className="space-home">
         {/* HERO SECTION */}
@@ -144,9 +170,11 @@ export function MissionConsole({
             </h1>
 
             <p className="hero-lead-subtitle">
-              {crew.id} ({crew.role}) · {knownVitalsCount} of 3 vital signs
-              recorded.{' '}
-              {response?.next_check?.title ?? 'Escalation Protocol Active'}.
+              {crew.id} ({crew.role}) · {knownVitalsCount}/3 vitals · Radiation{' '}
+              {crew.radiationDailyMsv !== null
+                ? `${crew.radiationDailyMsv} mSv/d`
+                : 'Unknown'}{' '}
+              · {response?.next_check?.title ?? 'Escalation Protocol Active'}.
             </p>
 
             <div
@@ -183,11 +211,14 @@ export function MissionConsole({
         </section>
 
         {/* OVERVIEW HEALTH STATUS DASHBOARD (CARD-BASED PRESENTATION) */}
-        <section className="overview-dashboard-section" aria-label="Crew health status dashboard">
+        <section
+          className="overview-dashboard-section"
+          aria-label="Crew health status dashboard"
+        >
           <div className="dashboard-header-bar">
             <div>
               <div className="wide-planetary-label left-aligned">
-                L I V E &nbsp; H E A L T H &nbsp; D A S H B O A R D
+                L I V E &nbsp; H E A L T H &nbsp; D A S H B O A R D &nbsp; · &nbsp; S Y N T H E T I C &nbsp; D A T A
               </div>
               <h2 className="section-sans-headline">
                 {crew.id} Status Overview · {crew.role}
@@ -212,7 +243,7 @@ export function MissionConsole({
             </div>
           </div>
 
-          {/* ROW 1: 4 VITAL & STATUS KPI CARDS */}
+          {/* ROW 1: 4 PRIMARY VITAL & SYMPTOM STATUS CARDS */}
           <div className="dashboard-kpi-grid">
             {/* Card 1: Heart Rate */}
             <article className="status-kpi-card rail-reading" onClick={() => go(1)}>
@@ -295,7 +326,7 @@ export function MissionConsole({
                 <span>Baseline: {crew.sleepBaseline} hrs</span>
                 <span>
                   {crew.sleep !== null
-                    ? `${(crew.sleep - crew.sleepBaseline >= 0 ? '+' : '')}${(
+                    ? `${crew.sleep - crew.sleepBaseline >= 0 ? '+' : ''}${(
                         crew.sleep - crew.sleepBaseline
                       ).toFixed(1)} hrs`
                     : 'Not measured'}
@@ -328,14 +359,196 @@ export function MissionConsole({
               <div className="kpi-card-footer">
                 <span>
                   {missing.length > 0
-                    ? `Missing: ${missing.join(', ')}`
+                    ? `${missing.length} parameter(s) unknown`
                     : 'Complete record'}
                 </span>
               </div>
             </article>
           </div>
 
-          {/* ROW 2: NEXT-CHECK NAVIGATION CARD + 7-DAY TREND CARD */}
+          {/* ROW 2: SPACE RADIATION & MICROGRAVITY EFFECTS CARDS */}
+          <div className="roster-section-head">
+            <span className="wide-planetary-label left-aligned">
+              S P A C E &nbsp; R A D I A T I O N &nbsp; &amp; &nbsp; M I C R O G R A V I T Y &nbsp; E F F E C T S &nbsp; ( S Y N T H E T I C )
+            </span>
+          </div>
+
+          <div className="space-hazards-grid">
+            {/* Hazard Card 1: Space Radiation Dosimetry */}
+            <article className="status-kpi-card" onClick={() => go(1)}>
+              <div className="kpi-card-top">
+                <span className="kpi-icon-badge amber-icon">
+                  <Radiation size={18} />
+                </span>
+                <span
+                  className={`kpi-status-pill ${
+                    crew.radiationDailyMsv === null
+                      ? 'amber'
+                      : crew.radiationDailyMsv > crew.radiationBaselineMsv + 0.08
+                      ? 'amber'
+                      : 'ok'
+                  }`}
+                >
+                  {crew.radiationDailyMsv === null
+                    ? 'UNKNOWN'
+                    : crew.radiationDailyMsv > crew.radiationBaselineMsv + 0.08
+                    ? 'ELEVATED GCR/SPE'
+                    : 'RECORDED'}
+                </span>
+              </div>
+
+              <div className="kpi-card-value">
+                <strong
+                  className={crew.radiationDailyMsv === null ? 'unknown-val' : ''}
+                >
+                  {crew.radiationDailyMsv ?? 'Unknown'}
+                </strong>
+                {crew.radiationDailyMsv !== null && <small>mSv/day</small>}
+              </div>
+
+              <span className="kpi-card-label">Space Radiation Dosimetry</span>
+
+              <div className="hazard-detail-rows">
+                <div className="hazard-kv">
+                  <span>Cumulative (180d):</span>
+                  <b
+                    className={
+                      crew.radiationCumulativeMsv === null ? 'unknown-val' : ''
+                    }
+                  >
+                    {crew.radiationCumulativeMsv !== null
+                      ? `${crew.radiationCumulativeMsv} mSv`
+                      : 'Unknown'}
+                  </b>
+                </div>
+                <div className="hazard-kv">
+                  <span>Transit Baseline:</span>
+                  <b>{crew.radiationBaselineMsv} mSv/day</b>
+                </div>
+              </div>
+
+              <div className="kpi-card-footer">
+                <span>
+                  Dosimeter: {dosimeterAvailable ? 'Available' : 'Unavailable'}
+                </span>
+                <span>Synthetic Demo</span>
+              </div>
+            </article>
+
+            {/* Hazard Card 2: Microgravity Countermeasure & Bone/Muscle Load */}
+            <article className="status-kpi-card" onClick={() => go(1)}>
+              <div className="kpi-card-top">
+                <span className="kpi-icon-badge purple-icon">
+                  <Dumbbell size={18} />
+                </span>
+                <span
+                  className={`kpi-status-pill ${
+                    crew.countermeasureMin === null
+                      ? 'amber'
+                      : crew.countermeasureMin < crew.countermeasureTargetMin
+                      ? 'amber'
+                      : 'ok'
+                  }`}
+                >
+                  {crew.countermeasureMin === null
+                    ? 'UNKNOWN'
+                    : crew.countermeasureMin >= crew.countermeasureTargetMin
+                    ? 'PROTOCOL MET'
+                    : 'BELOW TARGET'}
+                </span>
+              </div>
+
+              <div className="kpi-card-value">
+                <strong
+                  className={crew.countermeasureMin === null ? 'unknown-val' : ''}
+                >
+                  {crew.countermeasureMin ?? 'Unknown'}
+                </strong>
+                {crew.countermeasureMin !== null && (
+                  <small>/ {crew.countermeasureTargetMin} min</small>
+                )}
+              </div>
+
+              <span className="kpi-card-label">
+                Microgravity Countermeasure (ARED)
+              </span>
+
+              <div className="hazard-detail-rows">
+                <div className="hazard-kv">
+                  <span>Body Mass (SLAMMD):</span>
+                  <b className={crew.bodyMassKg === null ? 'unknown-val' : ''}>
+                    {crew.bodyMassKg !== null
+                      ? `${crew.bodyMassKg} kg`
+                      : 'Unknown'}
+                  </b>
+                </div>
+                <div className="hazard-kv">
+                  <span>Pre-Flight Baseline:</span>
+                  <b>
+                    {crew.baselineMassKg} kg
+                    {crew.bodyMassKg !== null
+                      ? ` (${(crew.bodyMassKg - crew.baselineMassKg).toFixed(1)} kg)`
+                      : ''}
+                  </b>
+                </div>
+              </div>
+
+              <div className="kpi-card-footer">
+                <span>Deconditioning log</span>
+                <span>Synthetic Demo</span>
+              </div>
+            </article>
+
+            {/* Hazard Card 3: Microgravity Fluid Shift & Ocular (SANS) Check */}
+            <article className="status-kpi-card" onClick={() => go(4)}>
+              <div className="kpi-card-top">
+                <span className="kpi-icon-badge">
+                  <Eye size={18} />
+                </span>
+                <span
+                  className={`kpi-status-pill ${
+                    crew.ocularCheck === null ? 'amber' : 'ok'
+                  }`}
+                >
+                  {crew.ocularCheck === null ? 'UNKNOWN' : 'RECORDED'}
+                </span>
+              </div>
+
+              <div className="kpi-card-value symptom-val">
+                <strong className={crew.ocularCheck === null ? 'unknown-val' : ''}>
+                  {crew.ocularCheck ?? 'Unknown (Unmeasured)'}
+                </strong>
+              </div>
+
+              <span className="kpi-card-label">
+                Microgravity Ocular &amp; Fluid-Shift Check (SANS)
+              </span>
+
+              <div className="hazard-detail-rows">
+                <div className="hazard-kv">
+                  <span>Ultrasound Unit:</span>
+                  <b className={!ultrasoundAvailable ? 'unknown-val' : ''}>
+                    {ultrasoundAvailable ? 'Available' : 'Unavailable'}
+                  </b>
+                </div>
+                <div className="hazard-kv">
+                  <span>Safety Rule:</span>
+                  <b>Never inferred from vitals</b>
+                </div>
+              </div>
+
+              <div className="kpi-card-footer">
+                <span>
+                  {ultrasoundAvailable
+                    ? 'Ocular scan feasible'
+                    : 'Imaging check blocked'}
+                </span>
+                <span>Inventory →</span>
+              </div>
+            </article>
+          </div>
+
+          {/* ROW 3: NEXT-CHECK NAVIGATION CARD + MULTI-METRIC 7-DAY TREND CARD */}
           <div className="dashboard-middle-grid">
             <article className="next-check-status-card">
               <div className="nc-card-header">
@@ -380,6 +593,15 @@ export function MissionConsole({
                     </b>
                   </span>
                 </div>
+                <div className="nc-chip">
+                  <Eye size={14} />
+                  <span>
+                    Ultrasound:{' '}
+                    <b className={!ultrasoundAvailable ? 'unknown-val' : ''}>
+                      {ultrasoundAvailable ? 'Available' : 'Unavailable'}
+                    </b>
+                  </span>
+                </div>
               </div>
 
               <div className="slide-action-pill-track">
@@ -402,22 +624,63 @@ export function MissionConsole({
               </div>
             </article>
 
-            <article className="orbital-trend-card" onClick={() => go(2)}>
+            <article className="orbital-trend-card">
               <div className="trend-card-head">
-                <span className="wide-planetary-label left-aligned">
-                  7 - D A Y &nbsp; H E A R T &nbsp; R A T E &nbsp; T R E N D
-                </span>
-                <span className="trend-sub-val">
-                  {crew.id} · D174–D180 (Synthetic)
-                </span>
+                <div>
+                  <span className="wide-planetary-label left-aligned">
+                    7 - D A Y &nbsp; T E L E M E T R Y &nbsp; T R E N D
+                  </span>
+                  <span className="trend-sub-val">
+                    {crew.id} · D174–D180 (Synthetic)
+                  </span>
+                </div>
+
+                <div className="trend-mode-pills">
+                  <button
+                    type="button"
+                    className={`hairline-pill-btn ${
+                      trendMode === 'hr' ? 'active' : ''
+                    }`}
+                    onClick={() => setTrendMode('hr')}
+                  >
+                    Heart Rate
+                  </button>
+                  <button
+                    type="button"
+                    className={`hairline-pill-btn ${
+                      trendMode === 'rad' ? 'active' : ''
+                    }`}
+                    onClick={() => setTrendMode('rad')}
+                  >
+                    Radiation (mSv)
+                  </button>
+                  <button
+                    type="button"
+                    className={`hairline-pill-btn ${
+                      trendMode === 'ug' ? 'active' : ''
+                    }`}
+                    onClick={() => setTrendMode('ug')}
+                  >
+                    μG Exercise
+                  </button>
+                </div>
               </div>
-              <div className="trend-chart-wrap">
+
+              <div className="trend-chart-wrap" onClick={() => go(2)}>
                 <ResponsiveContainer width="100%" height={195}>
                   <AreaChart data={history}>
                     <defs>
                       <linearGradient id="cobaltGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#5B9BD5" stopOpacity={0.45} />
-                        <stop offset="100%" stopColor="#1E4D8C" stopOpacity={0.0} />
+                        <stop
+                          offset="0%"
+                          stopColor={trendColor}
+                          stopOpacity={0.45}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor={trendColor}
+                          stopOpacity={0.0}
+                        />
                       </linearGradient>
                     </defs>
                     <XAxis
@@ -430,8 +693,8 @@ export function MissionConsole({
                     <Area
                       isAnimationActive={false}
                       type="monotone"
-                      dataKey={crewKey}
-                      stroke="#5B9BD5"
+                      dataKey={trendDataKey}
+                      stroke={trendColor}
                       strokeWidth={2}
                       fill="url(#cobaltGrad)"
                     />
@@ -441,7 +704,7 @@ export function MissionConsole({
             </article>
           </div>
 
-          {/* ROW 3: CREW HEALTH ROSTER CARDS */}
+          {/* ROW 4: CREW HEALTH ROSTER CARDS */}
           <div className="roster-section-head">
             <span className="wide-planetary-label left-aligned">
               C R E W &nbsp; H E A L T H &nbsp; R O S T E R
@@ -473,7 +736,7 @@ export function MissionConsole({
                     </span>
                   </div>
 
-                  <div className="roster-metrics-strip">
+                  <div className="roster-metrics-strip five-cols">
                     <div className="roster-mini-stat">
                       <small>HR</small>
                       <b className={member.hr === null ? 'unknown-val' : ''}>
@@ -490,6 +753,30 @@ export function MissionConsole({
                       <small>BP</small>
                       <b className={!memberBp ? 'unknown-val' : ''}>
                         {memberBp ?? 'Unknown'}
+                      </b>
+                    </div>
+                    <div className="roster-mini-stat">
+                      <small>RAD</small>
+                      <b
+                        className={
+                          member.radiationDailyMsv === null ? 'unknown-val' : ''
+                        }
+                      >
+                        {member.radiationDailyMsv !== null
+                          ? `${member.radiationDailyMsv} mSv`
+                          : 'Unknown'}
+                      </b>
+                    </div>
+                    <div className="roster-mini-stat">
+                      <small>μG ARED</small>
+                      <b
+                        className={
+                          member.countermeasureMin === null ? 'unknown-val' : ''
+                        }
+                      >
+                        {member.countermeasureMin !== null
+                          ? `${member.countermeasureMin}m`
+                          : 'Unknown'}
                       </b>
                     </div>
                   </div>
@@ -542,9 +829,44 @@ export function MissionConsole({
                 ['Heart rate:', crew.hr === null ? 'Unknown' : `${crew.hr} bpm`],
                 ['Sleep:', crew.sleep === null ? 'Unknown' : `${crew.sleep} hours`],
                 ['Blood pressure:', bp ?? 'Unknown'],
+                [
+                  'Space radiation (daily):',
+                  crew.radiationDailyMsv === null
+                    ? 'Unknown'
+                    : `${crew.radiationDailyMsv} mSv/day (Baseline ${crew.radiationBaselineMsv} mSv/day)`,
+                ],
+                [
+                  'Space radiation (180d cumulative):',
+                  crew.radiationCumulativeMsv === null
+                    ? 'Unknown'
+                    : `${crew.radiationCumulativeMsv} mSv`,
+                ],
+                [
+                  'Microgravity exercise (ARED):',
+                  crew.countermeasureMin === null
+                    ? 'Unknown'
+                    : `${crew.countermeasureMin} / ${crew.countermeasureTargetMin} min`,
+                ],
+                [
+                  'Microgravity body mass (SLAMMD):',
+                  crew.bodyMassKg === null
+                    ? 'Unknown'
+                    : `${crew.bodyMassKg} kg (Baseline ${crew.baselineMassKg} kg)`,
+                ],
+                [
+                  'Microgravity ocular check (SANS):',
+                  crew.ocularCheck ?? 'Unknown',
+                ],
                 ['Symptoms:', crew.symptoms.join(', ') || 'None reported'],
-                ['Missing information:', missing.join(', ') || 'No missing form readings'],
+                [
+                  'Missing information:',
+                  missing.join(', ') || 'No missing form readings',
+                ],
                 ['BP monitor:', monitor ? 'Available' : 'Unavailable'],
+                [
+                  'Ultrasound unit:',
+                  ultrasoundAvailable ? 'Available' : 'Unavailable',
+                ],
                 ['Earth link:', flags[2] ? 'Online (simulated)' : 'Offline'],
                 ['Status:', response?.status ?? 'No demo fixture available'],
                 ['Example next check:', response?.next_check?.title ?? 'None'],
@@ -790,11 +1112,11 @@ export function MissionConsole({
         </section>
       )}
 
-      {/* Upper 7-Day Vital History Scrubber */}
+      {/* Upper 7-Day Vital, Radiation & Microgravity History Scrubber */}
       <div className="vital-history-scrubber-bar">
         <div className="gesture-360-overlay">
           <div className="wide-planetary-label">
-            I n s p e c t &nbsp; 7 - D a y &nbsp; V i t a l &nbsp; H i s t o r y
+            I n s p e c t &nbsp; 7 - D a y &nbsp; V i t a l &nbsp; &amp; &nbsp; R a d i a t i o n &nbsp; H i s t o r y
           </div>
           <div className="diamond-scrub-control">
             <span className="scrub-line" />
@@ -804,7 +1126,7 @@ export function MissionConsole({
               max={history.length - 1}
               value={dayIndex}
               onChange={(e) => setDayIndex(Number(e.target.value))}
-              aria-label="Scrub 7-day vital history"
+              aria-label="Scrub 7-day vital and radiation history"
               className="diamond-range-input"
             />
             <span className="diamond-node" aria-hidden="true">
@@ -814,7 +1136,8 @@ export function MissionConsole({
           </div>
           <span className="scrub-angle-readout">
             {activeHistoryDay.day.toUpperCase()} · HR {dayHr ?? 'UNKNOWN'} BPM ·
-            SLEEP {daySleep ?? 'UNKNOWN'} HRS
+            SLEEP {daySleep ?? 'UNKNOWN'} HRS · RAD {dayRad ?? 'UNKNOWN'} mSv/d ·
+            μG {dayCounter ?? 'UNKNOWN'} MIN
           </span>
         </div>
       </div>
@@ -831,13 +1154,23 @@ export function MissionConsole({
                 </strong>
               </div>
               <div className="spec-inline-row">
-                <span>Recorded Vitals:</span>{' '}
-                <strong>{knownVitalsCount} / 3 Known</strong>
+                <span>Radiation Dose:</span>{' '}
+                <strong
+                  className={crew.radiationDailyMsv === null ? 'unknown-val' : ''}
+                >
+                  {crew.radiationDailyMsv !== null
+                    ? `${crew.radiationDailyMsv} mSv/d`
+                    : 'Unknown'}
+                </strong>
               </div>
               <div className="spec-inline-row">
-                <span>Missing Data:</span>{' '}
-                <strong className={missing.length > 0 ? 'unknown-val' : ''}>
-                  {missing.length > 0 ? missing.join(', ') : 'None'}
+                <span>μG Exercise:</span>{' '}
+                <strong
+                  className={crew.countermeasureMin === null ? 'unknown-val' : ''}
+                >
+                  {crew.countermeasureMin !== null
+                    ? `${crew.countermeasureMin}/${crew.countermeasureTargetMin} min`
+                    : 'Unknown'}
                 </strong>
               </div>
             </div>
@@ -861,10 +1194,19 @@ export function MissionConsole({
                   aria-pressed={selected === 'readings'}
                 >
                   <span>
-                    <strong>Readings &amp; reported symptoms</strong>
+                    <strong>
+                      Vitals, radiation dosimetry &amp; microgravity load
+                    </strong>
                     <small>
                       HR {crew.hr ?? 'Unknown'} · Sleep {crew.sleep ?? 'Unknown'}{' '}
-                      · {crew.symptoms.join(', ') || 'No symptoms'}
+                      · Rad{' '}
+                      {crew.radiationDailyMsv !== null
+                        ? `${crew.radiationDailyMsv} mSv/d`
+                        : 'Unknown'}{' '}
+                      · ARED{' '}
+                      {crew.countermeasureMin !== null
+                        ? `${crew.countermeasureMin}m`
+                        : 'Unknown'}
                     </small>
                   </span>
                   <ArrowUpRight size={16} />
@@ -887,9 +1229,10 @@ export function MissionConsole({
                   aria-pressed={selected === 'bp'}
                 >
                   <span>
-                    <strong>Blood pressure</strong>
-                    <small className={!bp ? 'unknown-val' : ''}>
-                      {bp ? `${bp} mmHg` : 'Unknown'}
+                    <strong>Blood pressure &amp; microgravity ocular check</strong>
+                    <small className={!bp || !crew.ocularCheck ? 'unknown-val' : ''}>
+                      BP: {bp ? `${bp} mmHg` : 'Unknown'} · Ocular:{' '}
+                      {crew.ocularCheck ?? 'Unknown'}
                     </small>
                   </span>
                   <ArrowUpRight size={16} />
@@ -906,7 +1249,9 @@ export function MissionConsole({
                   <span>
                     {monitor
                       ? 'BP monitor available'
-                      : 'Blocked: BP monitor unavailable'}
+                      : 'Blocked: BP monitor unavailable'}{' '}
+                    · Ultrasound:{' '}
+                    {ultrasoundAvailable ? 'Available' : 'Unavailable'}
                   </span>
                   <ArrowUpRight size={15} />
                 </button>
