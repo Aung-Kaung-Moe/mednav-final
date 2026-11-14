@@ -7,7 +7,12 @@ test('cross-screen real records, three-crew isolation, report export and stale-r
  await page.goto('/');await expect(page.getByTestId('engine-status')).toHaveAttribute('data-status','needs_review');
  for(const [i,id] of ['Crew A','Crew B','Crew C'].entries()){
   await page.locator('header select').selectOption(id);
-  await expect(page.getByTestId('engine-status')).toHaveAttribute('data-status','needs_review');
+  const previous=(await(await request.get(`${base}/astronauts/${encodeURIComponent(id)}/history?limit=1000`)).json()).at(-1);
+  const previousEvaluation=await(await request.post(`${base}/investigations/evaluate`,{data:{check_in_id:previous.id,communication_status:'offline',emergency_override:false}})).json();
+  await expect(page.getByTestId('backend-status')).toHaveAttribute('data-check-in-id',previous.id);
+  // Earlier tests may persist an all-Unknown record. Its valid real-engine
+  // insufficient_evidence response is not a workflow failure or needs_review.
+  await expect(page.getByTestId('engine-status')).toHaveAttribute('data-status',previousEvaluation.status);
   await page.getByRole('button',{name:'Health Check-In',exact:true}).click();
   await expect(page.getByLabel('Space radiation (mSv/day)',{exact:true})).toHaveJSProperty('readOnly',true);
   await page.getByLabel('Heart rate (bpm)',{exact:true}).fill(String(81+i));

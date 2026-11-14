@@ -19,8 +19,10 @@ import {
   mountAnatomy,
   type AnatomyController,
 } from '../three/anatomyScene';
+import {regionForPart,evidenceLabels,type BodySystem,type EvidenceState} from '../data/bodyGraph';
 
 type BodyViewerProps = {
+  evidence?:Partial<Record<BodySystem,EvidenceState>>;
   selectedPart: string;
   setSelectedPart: (part: string) => void;
   layerMode: AnatomyLayerMode;
@@ -34,6 +36,7 @@ type BodyViewerProps = {
 };
 
 export function BodyViewer({
+  evidence={},
   selectedPart,
   setSelectedPart,
   layerMode,
@@ -223,9 +226,14 @@ export function BodyViewer({
         </div>
 
         <div className="quick-parts">
-          {FREQUENT_PARTS.map((key) => (
+          {FREQUENT_PARTS.map((key) => {
+            const system=regionForPart(key),state=system?evidence[system]:undefined;
+            return (
             <button
               key={key}
+              aria-label={formatPartKey(key)}
+              aria-description={state?evidenceLabels(state).join('; '):undefined}
+              title={state?evidenceLabels(state).join(' · '):undefined}
               type="button"
               className={selectedPart === key ? 'quick-active' : ''}
               onClick={() => {
@@ -243,8 +251,9 @@ export function BodyViewer({
               }}
             >
               {formatPartKey(key)}
+              {state&&<span className="bodygraph-evidence-marks" aria-hidden="true">{state.recorded&&<i className="evidence-recorded">●</i>}{state.changed&&<i className="evidence-change">◇</i>}{state.missing&&<i className="evidence-missing">?</i>}{state.review&&<i className="evidence-review">↗</i>}</span>}
             </button>
-          ))}
+          )})}
         </div>
 
         <div className="model-credit">

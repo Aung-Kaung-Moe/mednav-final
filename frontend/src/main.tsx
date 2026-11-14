@@ -17,6 +17,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { MissionConsole } from './components/MissionConsole';
+import {FollowUpPanel} from './components/FollowUpPanel';
 import { VoiceCheckIn } from './components/VoiceCheckIn';
 import { Panel, Badge } from './components/ui';
 import { crews, equipment, symptomOptions, type Crew } from './data/fixtures';
@@ -37,7 +38,7 @@ const value = (v: number | string | null, unit = '') =>
 function App() {
   const [page, setPage] = useState(0);
   const [crewId, setCrewId] = useState('Crew A');
-  const backend=useBackend(crewId);
+  const backend=useBackend(crewId,page===0);
   const {profiles,inventory,flags}=backend;
   const [mobile, setMobile] = useState(false);
   const [, setActivity] = useState<string[]>([]);
@@ -49,12 +50,14 @@ function App() {
   const crew = profiles.find((c) => c.id === crewId) ?? profiles[0];
 
   const go = (p: number) => {
+    if(p===0)backend.refresh();
     setPage(p);
     setMobile(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectCrew = (nextId: string) => {
+    backend.selectLatest();
     setCrewId(nextId);
     const nextCrew = profiles.find((c) => c.id === nextId)!;
     setFlags((f) => [f[0], nextCrew.bp !== null, f[2], f[3]]);
@@ -164,10 +167,10 @@ function App() {
         <main id="main">
         {backend.live&&backend.busy&&<p role="status" className="sheet-footnote">Evaluating…</p>}
         {backend.error&&<p role="alert" className="error">{backend.error} <button className="hairline-pill-btn" onClick={backend.retry}>Retry backend</button></p>}
-        {isConsolePage && (!backend.live || backend.result!==null) && (
+        {isConsolePage && (!backend.live || backend.result!==null || (page===0&&backend.initialized)) && (
           <MissionConsole
             key={page}
-            crew={crew}
+            crew={backend.live&&page!==0&&backend.record?{...crew,hr:backend.record.hr,sleep:backend.record.sleep,bp:backend.record.bp,symptoms:backend.record.symptoms}:crew}
             profiles={profiles}
             onSelectCrew={handleSelectCrew}
             inventory={inventory}
@@ -175,12 +178,21 @@ function App() {
             liveResponse={backend.result}
             liveHistory={backend.history}
             liveRecord={backend.record}
+            liveRecords={backend.records}
+            historyLoading={backend.historyLoading}
+            historyError={backend.historyError}
+            lastSyncedAt={backend.lastSyncedAt}
+            onRefresh={backend.refresh}
+            refreshing={backend.busy}
+            onInvestigate={(id)=>{backend.investigate(id);go(2)}}
             flags={flags}
             setFlags={backend.changeFlags}
             page={page}
             go={go}
           />
         )}
+
+        {page===2&&backend.live&&backend.result&&backend.savedId&&<FollowUpPanel key={`${crew.id}:${backend.savedId}`} crewId={crew.id} checkInId={backend.savedId}/>}
 
         {page === 1 && (!backend.live||backend.initialized) && (
           <CheckIn

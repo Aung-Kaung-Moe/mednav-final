@@ -58,7 +58,7 @@ export const crews: Crew[] = [
     radiationBaselineMsv: 0.55,
     countermeasureMin: 120,
     countermeasureTargetMin: 120,
-    ocularCheck: 'Optic sheath 5.1 mm (Recorded)',
+    ocularCheck: 'Illustrative optic sheath 5.1 mm (not recorded)',
     bodyMassKg: 68.4,
     baselineMassKg: 68.8,
   },

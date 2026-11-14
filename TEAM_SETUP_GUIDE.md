@@ -1,6 +1,6 @@
 # MEDNAV teammate setup — Windows
 
-Use this guide for `integration/first-live-demo`. No teammate's checkout, virtual environment, database or installed model is required.
+Use this guide for `feature/body-system-monitoring-v1` (BodyGraph v3, including v1/v2 monitoring and follow-up). No teammate's checkout, virtual environment, database or installed model is required. The original integrated demo remains on `integration/first-live-demo`.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Use this guide for `integration/first-live-demo`. No teammate's checkout, virtua
 ## Clone and install
 
 ```powershell
-git clone --branch integration/first-live-demo https://github.com/ZawLwinHtoo/NASA_Space_APP_Challenge.git MEDNAV
+git clone --branch feature/body-system-monitoring-v1 https://github.com/ZawLwinHtoo/NASA_Space_APP_Challenge.git MEDNAV
 cd MEDNAV
 python -m venv backend/.venv
 backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
@@ -128,8 +128,14 @@ The generated ignored WAV is real audio test input, not a mocked transcript. Aut
 - **Browser test cannot launch Edge:** install Edge or Playwright's msedge channel. No browser download is required when compatible Edge already exists.
 - **Missing voice model:** install requirements-voice into this clone's venv and restart its backend. `/api/v1/voice/status` reports availability. Do not treat a 503 as a medical result.
 - **Voice transcript wrong:** correct it explicitly or use manual entry. Captured browser audio quality remains a known P1; voice success is not a publication gate for the verified core.
-- **Mobile Incident Report overflow:** known P2 around 390 px viewport; no redesign was made during integration. Prefer desktop for the guided demo until a scoped fix.
+- **Mobile Incident Report:** the scoped v2 fix now covers 375/390 px without changing the desktop columns; see `MEDNAV_V2_QA_FIX_REPORT.md` for verification.
 - **Offline assets:** installed core engine/DB/STT need no external service. Google Fonts and detailed anatomy CDN assets may fail; fallback fonts/schematic remain. Vendor approved assets separately if identical offline visuals are required.
 - **Different device:** 127.0.0.1 is that device, not another PC. LAN binding/CORS/HTTPS microphone access require deliberate configuration. The tested setup is same-PC localhost.
 - **API URL override:** set `VITE_API_URL` before starting/building Vite, default `http://127.0.0.1:8000/api/v1`, no trailing slash. Do not send radiation/microgravity extras to strict POST check-ins.
 - No authentication, cloud sync, validated clinical reasoning, medication/treatment system or NASA endorsement is claimed. All competition health records are synthetic.
+
+## BodyGraph v3 demo and handoff
+
+In Live Mode select a crew, then use Mission replay inside Selected Anatomy to select an exact saved timestamp/check-in. Choose any of the eight region labels. Heart/Brain show recorded HR/sleep history; the other systems display original reported symptoms and honest missing-measurement states. Ocular assessments are not persisted and remain Unknown. Expand Cross-system observations or Recorded follow-up, or investigate the selected saved record using the existing real engine. Return to latest restores current monitoring. Replay itself does not mutate measurements or save an event.
+
+For implementation details, actual test counts, screenshots, the reproducible synthetic evaluation and remaining limitations, read `BODYGRAPH_V3_REPORT.md`. Local screenshot/test-log folders are ignored and are not required to run the application. Reproduce browser evidence on a disposable database using the tracked Playwright suites. This branch includes the additive follow-up model/API documented in `backend/integration/FOLLOW_UP_API_V1.md`; startup creates its table without resetting existing records. Incident reports remain session previews, and evidence markers are not clinical severity or approval labels.
