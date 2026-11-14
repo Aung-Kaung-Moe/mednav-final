@@ -23,6 +23,7 @@ import {
 } from 'recharts';
 import { history, type Crew, type Equipment } from '../data/fixtures';
 import { getScenario } from '../data/scenarios';
+import { formatInvestigationView } from '../types/scenario';
 import '../console.css';
 
 type Props = {
@@ -81,17 +82,12 @@ export function MissionConsole({
   const [dayIndex, setDayIndex] = useState(history.length - 1);
   const [trendMode, setTrendMode] = useState<'hr' | 'rad' | 'ug'>('hr');
 
-  const candidate = getScenario(flags);
-  const response = candidate?.next_check?.equipment.some(
-    (name) =>
-      name !== 'Blood-pressure monitor' &&
-      !inventory.some((e) => e.name === name && e.available)
-  )
-    ? null
-    : candidate;
+  // Purely render the engine/fixture response — no separate medical decision logic in the frontend.
+  const response = getScenario(flags);
+  const view = formatInvestigationView(response);
 
   const focus = evidence[selected];
-  const bp = flags[1] ? (crew.bp ?? response?.observations.bp ?? null) : null;
+  const bp = flags[1] ? (crew.bp ?? view.observationsBp ?? null) : null;
   const monitor = flags[0];
 
   const dosimeterAvailable =
@@ -174,7 +170,7 @@ export function MissionConsole({
               {crew.radiationDailyMsv !== null
                 ? `${crew.radiationDailyMsv} mSv/d`
                 : 'Unknown'}{' '}
-              · {response?.next_check?.title ?? 'Escalation Protocol Active'}.
+              · {view.nextCheckTitle}.
             </p>
 
             <div
@@ -555,27 +551,13 @@ export function MissionConsole({
                 <span className="wide-planetary-label left-aligned">
                   N E X T - C H E C K &nbsp; N A V I G A T I O N
                 </span>
-                <span
-                  className={`kpi-status-pill ${
-                    response?.status === 'escalate'
-                      ? 'coral'
-                      : response?.status === 'resource-unavailable'
-                      ? 'amber'
-                      : 'ok'
-                  }`}
-                >
-                  {response?.status === 'escalate'
-                    ? 'ESCALATION PROTOCOL'
-                    : response?.status === 'resource-unavailable'
-                    ? 'RESOURCE UNAVAILABLE'
-                    : 'OFFICER REVIEW PENDING'}
+                <span className={`kpi-status-pill ${view.statusTone}`}>
+                  {view.statusBadge}
                 </span>
               </div>
 
-              <h3>
-                {response?.next_check?.title ?? 'Escalation Protocol Active'}
-              </h3>
-              <p>{response?.explanation.selected}</p>
+              <h3>{view.nextCheckTitle}</h3>
+              <p>{view.selectedExplanation}</p>
 
               <div className="nc-status-chips">
                 <div className="nc-chip">
@@ -818,10 +800,10 @@ export function MissionConsole({
         <div className="asymmetric-workspace-grid">
           <section className="left-telemetry-column">
             <h1 className="section-sans-headline">
-              {response?.id ?? 'No demo fixture available'} / {crew.id}
+              {view.id} / {crew.id}
             </h1>
             <p className="telemetry-summary-copy">
-              {response?.explanation.selected}
+              {view.selectedExplanation}
             </p>
 
             <dl className="hairline-telemetry-list">
@@ -868,8 +850,11 @@ export function MissionConsole({
                   ultrasoundAvailable ? 'Available' : 'Unavailable',
                 ],
                 ['Earth link:', flags[2] ? 'Online (simulated)' : 'Offline'],
-                ['Status:', response?.status ?? 'No demo fixture available'],
-                ['Example next check:', response?.next_check?.title ?? 'None'],
+                ['Status:', view.status],
+                [
+                  'Next check:',
+                  view.hasNextCheck ? view.nextCheckTitle : 'null (No next check)',
+                ],
               ].map(([k, v]) => (
                 <div className="telemetry-kv-row" key={k}>
                   <dt>{k}</dt>
@@ -884,8 +869,8 @@ export function MissionConsole({
               C H E C K L I S T &nbsp; R A T I O N A L E
             </div>
             <h3>Why This Next Step Was Selected</h3>
-            <p>{response?.explanation.selected}</p>
-            <p>{response?.explanation.excluded}</p>
+            <p>{view.selectedExplanation}</p>
+            <p>{view.excludedExplanation}</p>
 
             <div className="sheet-divider" />
 
@@ -946,7 +931,14 @@ export function MissionConsole({
                 className="hairline-pill-btn"
                 onClick={() => setFlags([false, false, false, false])}
               >
-                Default (Monitor Blocked)
+                Needs Review (Monitor Blocked)
+              </button>
+              <button
+                type="button"
+                className="hairline-pill-btn"
+                onClick={() => setFlags([false, false, true, false])}
+              >
+                Insufficient Evidence (next_check: null)
               </button>
               <button
                 type="button"
@@ -967,7 +959,7 @@ export function MissionConsole({
                 className="hairline-pill-btn"
                 onClick={() => setFlags([false, false, false, true])}
               >
-                Emergency Override
+                Escalate (Emergency Override)
               </button>
             </div>
 
@@ -992,19 +984,16 @@ export function MissionConsole({
 
           <aside className="right-frosted-sheet" aria-label="Decision trace">
             <div className="wide-planetary-label left-aligned">
-              {response?.status === 'escalate'
-                ? 'E S C A L A T I O N   S T A T E'
-                : response?.status === 'resource-unavailable'
-                ? 'R E S O U R C E   U N A V A I L A B L E'
-                : 'O F F I C E R   R E V I E W'}
+              {view.statusBadge}
             </div>
 
-            <h2>
-              {response?.next_check?.title ??
-                (response ? 'Routine checks paused' : 'No demo fixture available')}
-            </h2>
+            <h2>{view.nextCheckTitle}</h2>
 
             <dl className="hairline-telemetry-list compact-list">
+              <div className="telemetry-kv-row compact">
+                <dt>Engine Status:</dt>
+                <dd>{view.status}</dd>
+              </div>
               <div className="telemetry-kv-row compact">
                 <dt>Blood Pressure:</dt>
                 <dd className={!bp ? 'unknown-val' : ''}>
@@ -1018,24 +1007,25 @@ export function MissionConsole({
               <div className="telemetry-kv-row compact">
                 <dt>Required Equipment:</dt>
                 <dd>
-                  {response?.next_check?.equipment.join(', ') ??
-                    'None — no next check'}
+                  {view.nextCheckEquipment.length > 0
+                    ? view.nextCheckEquipment.join(', ')
+                    : 'None (next_check: null)'}
                 </dd>
               </div>
               <div className="telemetry-kv-row compact">
                 <dt>Scenario ID:</dt>
-                <dd>{response?.id ?? 'UNSUPPORTED'}</dd>
+                <dd>{view.id}</dd>
               </div>
             </dl>
 
             <div className="trace-copy-block">
               <span className="micro-label">WHY SELECTED</span>
-              <p>{response?.explanation.selected}</p>
+              <p>{view.selectedExplanation}</p>
             </div>
 
             <div className="trace-copy-block">
               <span className="micro-label">WHY EXCLUDED</span>
-              <p>{response?.explanation.excluded}</p>
+              <p>{view.excludedExplanation}</p>
             </div>
 
             <button
@@ -1259,13 +1249,17 @@ export function MissionConsole({
 
               <div
                 className={`evidence-stage-card next-stage ${
-                  response?.status === 'escalate' ? 'escalation ' : ''
+                  view.status === 'escalate' ? 'escalation ' : ''
                 }${focus.links.includes('next') ? 'linked' : ''}`}
               >
                 <div className="stage-card-head">
                   <span>03 · FEASIBLE NEXT CHECK</span>
                   <span>
-                    {response?.status === 'escalate' ? 'ESCALATED' : 'FEASIBLE'}
+                    {view.status === 'escalate'
+                      ? 'ESCALATED'
+                      : view.hasNextCheck
+                      ? 'FEASIBLE'
+                      : 'NEXT_CHECK: NULL'}
                   </span>
                 </div>
                 <button
@@ -1277,13 +1271,10 @@ export function MissionConsole({
                   aria-pressed={selected === 'next'}
                 >
                   <span>
-                    <strong>
-                      {response
-                        ? (response.next_check?.title ?? 'No next check')
-                        : 'No demo fixture available'}
-                    </strong>
+                    <strong>{view.nextCheckTitle}</strong>
                     <small>
-                      {response?.status === 'escalate'
+                      Status: {view.status} ·{' '}
+                      {view.status === 'escalate'
                         ? 'Manual emergency override'
                         : 'Medical officer review required'}
                     </small>
@@ -1302,23 +1293,14 @@ export function MissionConsole({
               <span
                 className={
                   'trace-status ' +
-                  (response?.status === 'escalate' ? 'escalation' : '')
+                  (view.status === 'escalate' ? 'escalation' : '')
                 }
               >
-                {response?.status === 'escalate'
-                  ? 'ESCALATION DEMO STATE'
-                  : response?.status === 'resource-unavailable'
-                  ? 'RESOURCE UNAVAILABLE'
-                  : response
-                  ? 'OFFICER REVIEW PENDING'
-                  : 'NO DEMO FIXTURE AVAILABLE'}
+                {view.statusBadge}
               </span>
             </div>
 
-            <h2>
-              {response?.next_check?.title ??
-                (response ? 'Routine checks paused' : 'No demo fixture available')}
-            </h2>
+            <h2>{view.nextCheckTitle}</h2>
 
             <div className="selection-context" aria-live="polite">
               <strong>{focus.title}</strong>
@@ -1327,19 +1309,20 @@ export function MissionConsole({
 
             <div className="trace-section">
               <span className="micro-label">WHY SELECTED</span>
-              <p>{response?.explanation.selected}</p>
+              <p>{view.selectedExplanation}</p>
             </div>
 
             <div className="trace-section">
               <span className="micro-label">WHY EXCLUDED</span>
-              <p>{response?.explanation.excluded}</p>
+              <p>{view.excludedExplanation}</p>
             </div>
 
             <div className="trace-section">
               <span className="micro-label">REQUIRED EQUIPMENT</span>
               <p>
-                {response?.next_check?.equipment.join(', ') ??
-                  'None — no next check'}
+                {view.nextCheckEquipment.length > 0
+                  ? view.nextCheckEquipment.join(', ')
+                  : 'None (next_check: null)'}
               </p>
             </div>
           </aside>
@@ -1357,8 +1340,7 @@ export function MissionConsole({
               onClick={() => setDrawer(!drawer)}
             >
               <span>
-                {response?.next_check?.title ?? 'Escalation Protocol'} ·{' '}
-                {crew.id}
+                {view.nextCheckTitle} · {crew.id}
               </span>
             </button>
 
