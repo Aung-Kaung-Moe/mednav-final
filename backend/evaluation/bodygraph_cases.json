@@ -1,0 +1,16 @@
+{
+  "dataset_type": "synthetic",
+  "purpose": "Non-clinical navigation targets, not preferred medical actions. Both methods share the same engine safety/eligibility gates and history access.",
+  "cases": [
+    {"id":"monitor-blocked","hr":88,"sleep":4.2,"bp":null,"symptoms":["Headache","Dizziness"],"quantity":1,"available":false,"override":false,"communication":"offline","target":"review_equipment_status"},
+    {"id":"monitor-ready","hr":88,"sleep":4.2,"bp":null,"symptoms":["Headache","Dizziness"],"quantity":1,"available":true,"override":false,"communication":"offline","target":"measure_blood_pressure"},
+    {"id":"bp-recorded","hr":88,"sleep":4.2,"bp":"120 / 80","symptoms":["Fatigue"],"quantity":1,"available":true,"override":false,"communication":"offline","target":"review_sleep_workload"},
+    {"id":"sleep-unknown","hr":88,"sleep":null,"bp":null,"symptoms":["Headache"],"quantity":1,"available":true,"override":false,"communication":"offline","target":"measure_blood_pressure"},
+    {"id":"all-unknown","hr":null,"sleep":null,"bp":null,"symptoms":[],"quantity":0,"available":false,"override":false,"communication":"offline","target":null},
+    {"id":"monitor-unusable","hr":88,"sleep":4.2,"bp":null,"symptoms":["Fatigue"],"quantity":1,"available":false,"override":false,"communication":"offline","target":"review_equipment_status"},
+    {"id":"stock-zero","hr":88,"sleep":4.2,"bp":null,"symptoms":["Fatigue"],"quantity":0,"available":false,"override":false,"communication":"offline","target":"review_equipment_status"},
+    {"id":"manual-escalation-offline","hr":88,"sleep":4.2,"bp":null,"symptoms":["Headache"],"quantity":1,"available":true,"override":true,"communication":"offline","target":null},
+    {"id":"manual-escalation-online","hr":88,"sleep":4.2,"bp":"120 / 80","symptoms":[],"quantity":1,"available":true,"override":true,"communication":"online","target":null},
+    {"id":"baseline-record","hr":70,"sleep":7.3,"bp":"120 / 80","symptoms":[],"quantity":1,"available":true,"override":false,"communication":"offline","target":"review_sleep_workload"}
+  ]
+}

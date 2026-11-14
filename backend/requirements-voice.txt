@@ -1,0 +1,2 @@
+# Bundled English model; no runtime downloads, GPU or FFmpeg required.
+pocketsphinx==5.1.1

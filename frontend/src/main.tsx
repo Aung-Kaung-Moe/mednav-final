@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBackend } from './api';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowUpRight,
@@ -25,6 +26,8 @@ import { MissionConsole } from './components/MissionConsole';
 import VoiceAssistant from './voice/VoiceAssistant';
 import { configureVoiceDemo } from './voice/currentDemo';
 import type { InvestigationResponse } from './voice/types';
+import { FollowUpPanel } from './components/FollowUpPanel';
+import { VoiceCheckIn } from './components/VoiceCheckIn';
 import { Panel, Badge } from './components/ui';
 import {
   crews,
@@ -50,20 +53,32 @@ const value = (v: number | string | null, unit = '') =>
 function App() {
   const [page, setPage] = useState(0);
   const [crewId, setCrewId] = useState('Crew A');
-  const [profiles, setProfiles] = useState(crews);
-  const [inventory, setInventory] = useState(equipment);
+  const backend=useBackend(crewId,page===0);
+  const {profiles,inventory,flags}=backend;
   const [mobile, setMobile] = useState(false);
   const [, setActivity] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
-  const [flags, setFlags] = useState([false, false, false, false]);
   const [voiceResponse, setVoiceResponse] = useState<InvestigationResponse | null>(null);
+  const setFlags = (update: boolean[] | ((f: boolean[]) => boolean[])) =>
+    backend.changeFlags(typeof update === 'function' ? update(flags) : update);
 
-  const crew = profiles.find((c) => c.id === crewId)!;
-  configureVoiceDemo({ profiles, inventory, save: (next) => {
-    setProfiles(previous => previous.map(item => item.id === next.id ? next : item));
-    setFlags(previous => [previous[0], next.bp !== null, previous[2], previous[3]]);
-  } });
+  useEffect(() => {
+    if (backend.initialized && profiles.length && !profiles.some((c) => c.id === crewId)) {
+      setCrewId(profiles[0].id);
+    }
+  }, [backend.initialized, profiles, crewId]);
+
+  const crew = profiles.find((c) => c.id === crewId) ?? profiles[0];
+
+  configureVoiceDemo({
+    profiles,
+    inventory,
+    save: (next) => {
+      void backend.save(next);
+    },
+  });
+
   useEffect(() => {
     const onVoiceResult = (event: Event) => {
       const detail = (event as CustomEvent<{ response: InvestigationResponse }>).detail;
@@ -74,6 +89,7 @@ function App() {
   }, []);
 
   const go = (p: number) => {
+    if(p===0)backend.refresh();
     setPage(p);
     setMobile(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -81,6 +97,7 @@ function App() {
 
   const handleSelectCrew = (nextId: string) => {
     setVoiceResponse(null);
+    backend.selectLatest();
     setCrewId(nextId);
     const nextCrew = profiles.find((c) => c.id === nextId)!;
     setFlags((f) => [f[0], nextCrew.bp !== null, f[2], f[3]]);
@@ -164,6 +181,7 @@ function App() {
               <span>CREW</span>
               <select
                 value={crewId}
+                disabled={backend.live&&!backend.initialized}
                 onChange={(e) => handleSelectCrew(e.target.value)}
               >
                 {profiles.map((c) => (
@@ -181,47 +199,54 @@ function App() {
         </header>
 
         <main id="main">
-        {isConsolePage && (
+        {backend.live&&backend.busy&&<p role="status" className="sheet-footnote">Evaluating…</p>}
+        {backend.error&&<p role="alert" className="error">{backend.error} <button className="hairline-pill-btn" onClick={backend.retry}>Retry backend</button></p>}
+        {isConsolePage && (!backend.live || backend.result!==null || (page===0&&backend.initialized)) && (
           <MissionConsole
             key={page}
-            crew={crew}
+            crew={backend.live&&page!==0&&backend.record?{...crew,hr:backend.record.hr,sleep:backend.record.sleep,bp:backend.record.bp,symptoms:backend.record.symptoms}:crew}
             profiles={profiles}
             onSelectCrew={handleSelectCrew}
             inventory={inventory}
+            live={backend.live}
+            liveResponse={backend.result}
+            liveHistory={backend.history}
+            liveRecord={backend.record}
+            liveRecords={backend.records}
+            historyLoading={backend.historyLoading}
+            historyError={backend.historyError}
+            lastSyncedAt={backend.lastSyncedAt}
+            onRefresh={backend.refresh}
+            refreshing={backend.busy}
+            onInvestigate={(id)=>{backend.investigate(id);go(2)}}
             flags={flags}
-            setFlags={(f) => {
-              setFlags(f);
-              setInventory((v) =>
-                v.map((e) =>
-                  e.name === 'Blood-pressure monitor'
-                    ? { ...e, available: f[0] }
-                    : e
-                )
-              );
-            }}
+            setFlags={backend.changeFlags}
             page={page}
             voiceResponse={voiceResponse}
             go={go}
           />
         )}
 
-        {page === 1 && (
+        {page===2&&backend.live&&backend.result&&backend.savedId&&<FollowUpPanel key={`${crew.id}:${backend.savedId}`} crewId={crew.id} checkInId={backend.savedId}/>}
+
+        {page === 1 && (!backend.live||backend.initialized) && (
           <CheckIn
             key={crew.id}
             crew={crew}
-            save={(c) => {
-              setProfiles((p) => p.map((x) => (x.id === c.id ? c : x)));
-              setFlags((f) => [f[0], c.bp !== null, f[2], f[3]]);
-              setActivity((a) => [`${c.id} · Check-in saved`, ...a]);
-            }}
+            save={backend.save}
             investigate={() => go(2)}
+            live={backend.live}
           />
         )}
 
-        {page === 4 && (
+        {page === 4 && (!backend.live || backend.initialized) && (
           <MedicalInventory
             inventory={inventory}
-            setInventory={setInventory}
+            onToggleAvailable={(name, nextAvailable) => {
+              void backend.updateInventory(name, nextAvailable);
+            }}
+            busy={backend.busy}
+            live={backend.live}
             flags={flags}
             setFlags={setFlags}
             search={search}
@@ -235,7 +260,13 @@ function App() {
 
         <footer>
           <span>MEDNAV · ASTRONAUT HEALTH MONITORING</span>
-          <span>SYNTHETIC TELEMETRY · OFFLINE</span>
+          <span role="status" data-testid="backend-status" data-check-in-id={backend.savedId} title="Radiation, microgravity and anatomy telemetry remain illustrative. Earth-offline context is separate from local server connectivity.">{backend.live?'SYNTHETIC DATA · LIVE BACKEND':'SYNTHETIC DATA · LOCAL FIXTURE MODE'}</span>
+          <details aria-label="Developer tools">
+            <summary>Developer tools</summary>
+            <label>Data mode <select aria-label="Data mode" value={backend.live?'live':'fixture'} onChange={e=>{const params=new URLSearchParams(location.search);if(e.target.value==='fixture')params.set('mode','fixture');else params.delete('mode');location.search=params.toString();}}><option value="live">Live FastAPI + Stable engine</option><option value="fixture">Local fixture fallback (explicit)</option></select></label>
+            <p>Saved check-in: {backend.savedId||'None'}. Radiation, microgravity and anatomy telemetry are illustrative. Fixtures are scripted and nonpersistent.</p>
+            {backend.live&&backend.result&&<pre aria-label="Backend diagnostics" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(backend.result,null,2)}</pre>}
+          </details>
         </footer>
         </main>
       </div>
@@ -269,10 +300,12 @@ function CheckIn({
   crew,
   save,
   investigate,
+  live,
 }: {
   crew: Crew;
-  save: (c: Crew) => void;
+  save: (c: Crew) => Promise<void>;
   investigate: () => void;
+  live:boolean;
 }) {
   const [symptoms, setSymptoms] = useState(crew.symptoms);
   const [hr, setHr] = useState(crew.hr?.toString() || '');
@@ -286,21 +319,14 @@ function CheckIn({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [syncedNotice, setSyncedNotice] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const syncSensors = () => {
     setHr(crew.hr?.toString() ?? '');
-    setSleep(
-      crew.sleep?.toString() ?? ''
-    );
-    setRad(
-      crew.radiationDailyMsv?.toString() ?? ''
-    );
-    setAred(
-      crew.countermeasureMin?.toString() ?? ''
-    );
-    setMass(
-      crew.bodyMassKg?.toString() ?? ''
-    );
+    setSleep(crew.sleep?.toString() ?? '');
+    setRad(crew.radiationDailyMsv?.toString() ?? '');
+    setAred(crew.countermeasureMin?.toString() ?? '');
+    setMass(crew.bodyMassKg?.toString() ?? '');
     setSyncedNotice(true);
   };
 
@@ -354,6 +380,7 @@ function CheckIn({
             </div>
           ) : review ? (
             <div>
+              {error&&<p role="alert">{error}</p>}
               <Observation crew={draft} />
               <div className="review-actions">
                 <button
@@ -364,12 +391,13 @@ function CheckIn({
                 </button>
                 <button
                   className="ghost-rect-cta"
-                  onClick={() => {
-                    save(draft);
-                    setSaved(true);
+                  disabled={saving}
+                  onClick={async () => {
+                    setSaving(true);setError('');
+                    try {await save(draft);setSaved(true);}catch(e){setError((e as Error).message);}finally{setSaving(false);}
                   }}
                 >
-                  <span>Save Check-In</span>
+                  <span>{saving?'Saving…':'Save Check-In'}</span>
                   <ArrowUpRight size={18} />
                 </button>
               </div>
@@ -378,9 +406,9 @@ function CheckIn({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (Boolean(sys) !== Boolean(dia)) {
+                if (Boolean(sys) !== Boolean(dia) || (sys!=='' && (!/^[1-9][0-9]{0,3}$/.test(sys)||!/^[1-9][0-9]{0,3}$/.test(dia)))) {
                   setError(
-                    'Enter both blood-pressure values or leave both Unknown.'
+                    'Enter both blood-pressure values as positive whole numbers (1–4 digits) or leave both Unknown.'
                   );
                   return;
                 }
@@ -417,8 +445,33 @@ function CheckIn({
                     {syncedNotice ? 'Sensors Synced' : 'Sync Station Sensors'}
                   </span>
                 </button>
-
               </div>
+
+              <VoiceCheckIn
+                onApply={(parsed) => {
+                  if (parsed.clearSymptoms) {
+                    setSymptoms([]);
+                  } else if (parsed.symptoms && parsed.symptoms.length > 0) {
+                    setSymptoms(parsed.symptoms);
+                  } else if (parsed.removeSymptoms?.length) {
+                    setSymptoms((previous) =>
+                      previous.filter((s) => !parsed.removeSymptoms!.includes(s))
+                    );
+                  }
+                  if (parsed.hr !== undefined && parsed.hr !== null) {
+                    setHr(parsed.hr);
+                  }
+                  if (parsed.sleep !== undefined && parsed.sleep !== null) {
+                    setSleep(parsed.sleep);
+                  }
+                  if (parsed.sys !== undefined && parsed.sys !== null) {
+                    setSys(parsed.sys);
+                  }
+                  if (parsed.dia !== undefined && parsed.dia !== null) {
+                    setDia(parsed.dia);
+                  }
+                }}
+              />
 
               <fieldset>
                 <div className="fieldset-header">
@@ -531,6 +584,7 @@ function CheckIn({
                             type="button"
                             className="unknown-option"
                             aria-pressed={isUnknown}
+                            disabled={live && f.id >= 4}
                             onClick={() => f.set('')}
                           >
                             Unknown
@@ -540,6 +594,12 @@ function CheckIn({
                       <div className="field-stepper-input">
                         <input
                           id={`field-${f.id}`}
+                          readOnly={live && f.id >= 4}
+                          title={
+                            live && f.id >= 4
+                              ? 'Illustrative only: no approved persistence contract.'
+                              : undefined
+                          }
                           type="number"
                           min={f.min}
                           max={f.id === 1 ? 24 : undefined}
@@ -552,6 +612,7 @@ function CheckIn({
                           <button
                             type="button"
                             className="field-step-btn"
+                            disabled={live && f.id >= 4}
                             aria-label={`Decrease ${f.label}`}
                             onClick={() =>
                               stepValue(f.val, f.set, -f.step, f.min, f.decimals)
@@ -562,6 +623,7 @@ function CheckIn({
                           <button
                             type="button"
                             className="field-step-btn"
+                            disabled={live && f.id >= 4}
                             aria-label={`Increase ${f.label}`}
                             onClick={() =>
                               stepValue(f.val, f.set, f.step, f.min, f.decimals)
@@ -677,8 +739,10 @@ function CategoryIcon({ category }: { category: string }) {
 }
 
 function MedicalInventory({
-  inventory,
-  setInventory,
+  inventory: propInventory,
+  onToggleAvailable,
+  busy,
+  live,
   flags,
   setFlags,
   search,
@@ -687,14 +751,20 @@ function MedicalInventory({
   setCategory,
 }: {
   inventory: Equipment[];
-  setInventory: React.Dispatch<React.SetStateAction<Equipment[]>>;
+  onToggleAvailable: (name: string, nextAvailable: boolean) => void;
+  busy: boolean;
+  live: boolean;
   flags: boolean[];
-  setFlags: React.Dispatch<React.SetStateAction<boolean[]>>;
+  setFlags: (update: boolean[] | ((f: boolean[]) => boolean[])) => void;
   search: string;
   setSearch: (s: string) => void;
   category: string;
   setCategory: (c: string) => void;
 }) {
+  const [inventory, setInventory] = useState<Equipment[]>(propInventory);
+  useEffect(() => {
+    setInventory(propInventory);
+  }, [propInventory]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'usable' | 'unavailable'>('all');
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState('Monitoring');
@@ -1066,14 +1136,25 @@ function MedicalInventory({
                         <button
                           type="button"
                           className="equip-action-btn"
+                          disabled={busy || (!e.available && e.quantity === 0)}
+                          title={
+                            !e.available && e.quantity === 0
+                              ? 'Cannot enable zero-quantity equipment.'
+                              : undefined
+                          }
                           onClick={() => {
-                            const next = inventory.map((x) =>
-                              x.name === e.name
-                                ? { ...x, available: !x.available }
-                                : x
-                            );
-                            setInventory(next);
-                            syncBpFlag(next);
+                            if (live) {
+                              onToggleAvailable(e.name, !e.available);
+                            } else {
+                              const next = inventory.map((x) =>
+                                x.name === e.name
+                                  ? { ...x, available: !x.available }
+                                  : x
+                              );
+                              setInventory(next);
+                              syncBpFlag(next);
+                              onToggleAvailable(e.name, !e.available);
+                            }
                           }}
                         >
                           Mark {e.available ? 'Unavailable' : 'Usable'}

@@ -2009,3 +2009,42 @@
     grid-template-columns: 1fr;
   }
 }
+
+.bodygraph-navigator details > ol,
+.bodygraph-navigator details > ul {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.bodygraph-system-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.bodygraph-evidence-marks {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+}
+.bodygraph-evidence-marks i { font-style: normal; }
+.bodygraph-evidence-marks .evidence-recorded { color: var(--cobalt-glow); }
+.bodygraph-evidence-marks .evidence-change { color: var(--text-primary); }
+.bodygraph-evidence-marks .evidence-missing { color: var(--amber-solar); }
+.bodygraph-evidence-marks .evidence-review { color: var(--text-muted); }
+
+/* Report-only wrapping: preserve the approved desktop header and columns. */
+@media (max-width: 600px) {
+  .incident-report .subpage-top-bar {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .incident-report .subpage-top-bar > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .incident-report .subpage-top-bar .hairline-status-tag {
+    flex-basis: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

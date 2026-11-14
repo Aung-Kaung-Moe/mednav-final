@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Check, RotateCcw, AlertCircle } from 'lucide-react';
 import { symptomOptions } from '../data/fixtures';
+import {API} from '../api';
 
 export type ParsedVoiceCheckIn = {
   symptoms?: string[];
   clearSymptoms?: boolean;
+  removeSymptoms?: string[];
   hr?: string | null;
   sleep?: string | null;
   sys?: string | null;
@@ -15,7 +17,6 @@ type Props = {
   onApply: (parsed: ParsedVoiceCheckIn) => void;
 };
 
-const VOICE_API_BASE = 'http://127.0.0.1:8000';
 
 const WORD_ONES: Record<string, number> = {
   zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
@@ -71,7 +72,11 @@ export function parseTranscriptToCheckIn(text: string): ParsedVoiceCheckIn {
     result.clearSymptoms = true;
     result.symptoms = [];
   } else {
+    const aliases=(sym:string)=>sym==='Muscle discomfort'?['muscle discomfort','muscle ache','muscle pain','soreness']:[sym.toLowerCase()];
+    const denied = symptomOptions.filter(sym=>aliases(sym).some(s=>new RegExp(`\\b(?:no|without|denies|not experiencing)\\s+(?:a\\s+)?${s}\\b`).test(lower)));
+    if(denied.length)result.removeSymptoms=denied;
     const matched = symptomOptions.filter((sym) => {
+      if(denied.includes(sym))return false;
       const s = sym.toLowerCase();
       if (s === 'headache') {
         return /\b(headache|head ache|headaches|migraine)\b/.test(lower);
@@ -105,8 +110,8 @@ export function parseTranscriptToCheckIn(text: string): ParsedVoiceCheckIn {
     result.hr = '';
   } else {
     const hrMatch =
-      lower.match(/\b(?:heart rate|pulse|hr)\s*(?:is|of|at)?\s*(\d{2,3})\b/) ||
-      lower.match(/\b(\d{2,3})\s*(?:bpm|beats per minute)\b/);
+      lower.match(/\b(?:heart rate|pulse|hr)\s*(?:is|of|at)?\s*(\d+(?:\.\d+)?)\b(?!\.\d)/) ||
+      lower.match(/(?<![\w.-])(\d+(?:\.\d+)?)\s*(?:bpm|beats per minute)\b/);
     if (hrMatch) {
       result.hr = hrMatch[1];
     }
@@ -119,7 +124,7 @@ export function parseTranscriptToCheckIn(text: string): ParsedVoiceCheckIn {
       lower.match(
         /\b(?:sleep|slept|sleep duration)\s*(?:is|of|for|was)?\s*(\d{1,2}(?:\.\d+)?)\s*(?:hours|hrs|hour|h)?\b/
       ) ||
-      lower.match(/\b(\d{1,2}(?:\.\d+)?)\s*(?:hours|hrs)\s*(?:of\s+sleep)?\b/);
+      lower.match(/(?<![\w.-])(\d{1,2}(?:\.\d+)?)\s*(?:hours|hrs)\s*(?:of\s+sleep)?\b/);
     if (sleepMatch) {
       const val = Number(sleepMatch[1]);
       if (val >= 0 && val <= 24) {
@@ -138,7 +143,7 @@ export function parseTranscriptToCheckIn(text: string): ParsedVoiceCheckIn {
   } else {
     const bpPair =
       lower.match(
-        /\b(?:blood pressure|bp)?\s*(?:is|of|at)?\s*(\d{2,3})\s*(?:over|\/|by)\s*(\d{2,3})\b/
+        /(?<![\w.-])\b(?:blood pressure|bp)?\s*(?:is|of|at)?\s*(\d{2,3})\s*(?:over|\/|by)\s*(\d{2,3})\b/
       ) ||
       lower.match(
         /\bsystolic\s*(?:is|of)?\s*(\d{2,3}).*?\bdiastolic\s*(?:is|of)?\s*(\d{2,3})\b/
@@ -262,7 +267,7 @@ export function VoiceCheckIn({ onApply }: Props) {
         setSeconds((s) => s + 1);
       }, 1000);
     } catch {
-      setError('Microphone unavailable. Please use the form below.');
+      stopRecordingCleanup();setRecording(false);setError('Microphone unavailable. Please use the form below.');
     }
   };
 
@@ -284,26 +289,30 @@ export function VoiceCheckIn({ onApply }: Props) {
       offset += chunk.length;
     }
 
-    const wavBlob = encodeWav16kMono(merged, actualSampleRate);
-    await sendAudioToWhisper(wavBlob);
+    const wavBlob = encodeWav16kMono(merged.subarray(0,actualSampleRate*30), actualSampleRate);
+    await sendAudio(wavBlob);
   };
 
-  const sendAudioToWhisper = async (wavBlob: Blob) => {
+  useEffect(()=>{if(recording && seconds>=30)void stopAndTranscribe();},[recording,seconds]);
+
+  const sendAudio = async (wavBlob: Blob) => {
     setTranscribing(true);
     setError('');
+    setTranscript('');setApplied(false);
     try {
-      const res = await fetch(`${VOICE_API_BASE}/api/v1/voice/transcribe`, {
+      const res = await fetch(`${API}/voice/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'audio/wav' },
         body: wavBlob,
+        signal: AbortSignal.timeout(60000),
       });
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+        const detail=await res.json();throw new Error(typeof detail.detail==='string'?detail.detail:`Voice HTTP ${res.status}`);
       }
       const data = (await res.json()) as { text: string };
-      setTranscript(data.text || 'No speech detected.');
-    } catch {
-      setError('Voice service unavailable.');
+      if(!data.text.trim()){setTranscript('');setError('No speech recognized. Retry or use manual entry.');}else{setTranscript(data.text);setApplied(false);}
+    } catch(e) {
+      setError(e instanceof Error?e.message:'Voice service unavailable.');
     } finally {
       setTranscribing(false);
     }
@@ -313,6 +322,7 @@ export function VoiceCheckIn({ onApply }: Props) {
   const hasExtracted =
     (parsed.symptoms && parsed.symptoms.length > 0) ||
     parsed.clearSymptoms ||
+    (parsed.removeSymptoms?.length ?? 0)>0 ||
     parsed.hr !== undefined ||
     parsed.sleep !== undefined ||
     parsed.sys !== undefined;
@@ -368,6 +378,7 @@ export function VoiceCheckIn({ onApply }: Props) {
           />
 
           <div className="extracted-tags">
+            {parsed.removeSymptoms?.length ? <span className="ext-tag">Remove: {parsed.removeSymptoms.join(', ')}</span>:null}
             {parsed.clearSymptoms && (
               <span className="ext-tag">Symptoms: None</span>
             )}

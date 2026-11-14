@@ -120,31 +120,31 @@ export const PARTS: Record<string, PartDefinition> = {
     note: neuroNote,
   },
   eye_l: {
-    label: 'Ocular Structure (SANS · L)',
+    label: 'Ocular Structure (L)',
     system: 'Microgravity Fluid Shift / Ocular',
     description:
-      'Monitored for Spaceflight-Associated Neuro-ocular Syndrome (SANS) and cephalad fluid shifts in microgravity.',
-    metric: 'Ocular / SANS Check',
+      'Visual structures linked to reported symptoms. No verified ocular imaging or optic nerve measurement is available in the current backend.',
+    metric: 'Illustrative ocular fixture',
     value: (c) => c.ocularCheck ?? 'Unknown (Unmeasured)',
-    note: 'Never inferred from vital signs; requires verified imaging record.',
+    note: 'Illustrative display fixture only; not a verified onboard examination.',
   },
   eye_r: {
-    label: 'Ocular Structure (SANS · R)',
+    label: 'Ocular Structure (R)',
     system: 'Microgravity Fluid Shift / Ocular',
     description:
-      'Monitored for Spaceflight-Associated Neuro-ocular Syndrome (SANS) and cephalad fluid shifts in microgravity.',
-    metric: 'Ocular / SANS Check',
+      'Visual structures linked to reported symptoms. No verified ocular imaging or optic nerve measurement is available in the current backend.',
+    metric: 'Illustrative ocular fixture',
     value: (c) => c.ocularCheck ?? 'Unknown (Unmeasured)',
-    note: 'Never inferred from vital signs; requires verified imaging record.',
+    note: 'Illustrative display fixture only; not a verified onboard examination.',
   },
   eyes: {
-    label: 'Ocular Structure (SANS)',
+    label: 'Ocular Structure',
     system: 'Microgravity Fluid Shift / Ocular',
     description:
-      'Monitored for Spaceflight-Associated Neuro-ocular Syndrome (SANS) and cephalad fluid shifts in microgravity.',
-    metric: 'Ocular / SANS Check',
+      'Visual structures linked to reported symptoms. No verified ocular imaging or optic nerve measurement is available in the current backend.',
+    metric: 'Illustrative ocular fixture',
     value: (c) => c.ocularCheck ?? 'Unknown (Unmeasured)',
-    note: 'Never inferred from vital signs; requires verified imaging record.',
+    note: 'Illustrative display fixture only; not a verified onboard examination.',
   },
   heart: {
     label: 'Heart',

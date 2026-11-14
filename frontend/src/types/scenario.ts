@@ -71,11 +71,15 @@ export function formatInvestigationView(res: ScenarioResponse | null) {
       nextCheckEquipment: [] as string[],
       hasNextCheck: false,
       selectedExplanation:
-        'No check available for current data and equipment.',
+        'No investigation response is available.',
       excludedExplanation:
-        'Checks needing unavailable equipment are excluded.',
+        'No exclusion explanation is available.',
       resourceConstraintsList: [] as string[],
       observationsBp: null as string | null,
+      observationsList: [] as string[],
+      missingData: [] as string[],
+      safetyFlags: [] as string[],
+      reviewLabel: 'Unavailable',
     };
   }
 
@@ -94,8 +98,8 @@ export function formatInvestigationView(res: ScenarioResponse | null) {
   const excludedExplanation =
     typeof res.explanation === 'string'
       ? res.resource_constraints && Array.isArray(res.resource_constraints) && res.resource_constraints.length > 0
-        ? `Constraints: ${res.resource_constraints.join(', ')}.`
-        : 'No constraints reported.'
+        ? res.resource_constraints.join(' · ')
+        : 'No separate exclusion explanation was returned. See the engine explanation above.'
       : (res.explanation.excluded ?? '');
 
   const observationsBp =
@@ -140,13 +144,17 @@ export function formatInvestigationView(res: ScenarioResponse | null) {
     nextCheckTitle:
       nextTitle ??
       (res.status === 'escalate'
-        ? 'Follow emergency protocol'
-        : 'No next check'),
+        ? 'Escalation demo — no next check (next_check: null)'
+        : 'No permissible next check (next_check: null)'),
     nextCheckEquipment: nextEquip,
     hasNextCheck: res.next_check !== null,
     selectedExplanation,
     excludedExplanation,
     resourceConstraintsList,
     observationsBp,
+    observationsList: Array.isArray(res.observations)?res.observations:[],
+    missingData: res.missing_data,
+    safetyFlags: res.safety_flags,
+    reviewLabel: res.requires_medical_officer_review?'Required':'Not required by returned result',
   };
 }

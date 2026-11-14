@@ -28,7 +28,7 @@ import {
   Area,
   XAxis,
 } from 'recharts';
-import { history, type Crew, type Equipment } from '../data/fixtures';
+import { history as fixtureHistory, type Crew, type Equipment } from '../data/fixtures';
 import { getScenario } from '../data/scenarios';
 import {
   formatInvestigationView,
@@ -43,9 +43,26 @@ import {
 import { BodyViewer } from './BodyViewer';
 import type { InvestigationResponse } from '../voice/types';
 import { asVoiceResponse } from '../voice/currentDemo';
+import { BodySystemMonitoring } from './BodySystemMonitoring';
+import { MissionHealthTimeline } from './MissionHealthTimeline';
+import { bodyRegion } from '../data/bodyMonitoring';
+import { BODY_SYSTEMS, replayWindow, systemEvidence, type BodySystem, type EvidenceState } from '../data/bodyGraph';
+import { BodyGraphNavigator } from './BodyGraphNavigator';
+import type { SavedCheckIn } from '../types/api';
 import '../console.css';
 
 type Props = {
+  live?: boolean;
+  liveResponse?: ScenarioResponse | null;
+  liveHistory?: Record<string,unknown>[];
+  liveRecord?:SavedCheckIn|null;
+  liveRecords?:SavedCheckIn[];
+  historyLoading?:boolean;
+  historyError?:string;
+  lastSyncedAt?:string;
+  onRefresh?:()=>void;
+  refreshing?:boolean;
+  onInvestigate?:(id?:string)=>void;
   crew: Crew;
   profiles: Crew[];
   onSelectCrew: (id: string) => void;
@@ -81,8 +98,8 @@ const evidence = {
     links: ['resource', 'next'],
   },
   next: {
-    title: 'Next check',
-    text: 'Selected from approved checklists.',
+    title: 'Next step selection',
+    text: 'Returned by the prototype catalog and rules. Not a clinically validated mission checklist.',
     links: ['known', 'unknown', 'resource', 'next'],
   },
 };
@@ -179,13 +196,15 @@ function AstronautBadge() {
 function downloadJSON(
   crew: Crew,
   inventory: Equipment[],
-  response: ScenarioResponse | null
+  response: ScenarioResponse | null,
+  liveRecord?:SavedCheckIn|null
 ) {
   const sample = {
     project: 'MEDNAV',
     dataset_type: 'synthetic',
     exported_at: new Date().toISOString(),
-    subject: crew,
+    subject: liveRecord?{...liveRecord,baseline:crew.baseline,sleepBaseline:crew.sleepBaseline}:crew,
+    ...(liveRecord?{illustrative_telemetry:{radiationDailyMsv:crew.radiationDailyMsv,radiationCumulativeMsv:crew.radiationCumulativeMsv,countermeasureMin:crew.countermeasureMin,bodyMassKg:crew.bodyMassKg,ocularCheck:crew.ocularCheck},persistence:'Local preview/export only; investigation/report not persisted or transmitted.'}:{}),
     inventory,
     investigation_response: response,
     note: 'All fields are synthetic demonstration values, not clinical data or diagnosis.',
@@ -204,6 +223,9 @@ function downloadJSON(
 }
 
 export function MissionConsole({
+  live=false, liveResponse=null, liveHistory=[], liveRecord=null,
+  liveRecords=[],historyLoading=false,historyError='',onInvestigate,
+  lastSyncedAt='',onRefresh,refreshing=false,
   crew,
   profiles,
   onSelectCrew,
@@ -214,22 +236,36 @@ export function MissionConsole({
   go,
   voiceResponse,
 }: Props) {
+  const history = (live ? liveHistory : fixtureHistory) as typeof fixtureHistory;
   const [selected, setSelected] = useState<keyof typeof evidence>('bp');
   const [drawer, setDrawer] = useState(false);
-  const [dayIndex, setDayIndex] = useState(history.length - 1);
+  const [dayIndex, setDayIndex] = useState(() => {
+    const selectedIndex = liveRecord ? liveRecords.findIndex(r=>r.id===liveRecord.id) : -1;
+    return selectedIndex>=0?selectedIndex:Math.max(0,history.length-1);
+  });
   const [trendMode, setTrendMode] = useState<'hr' | 'rad' | 'ug'>('hr');
   const [selectedPart, setSelectedPart] = useState('brain');
+  const [replaySelection,setReplaySelection]=useState<{crewId:string;id:string}|null>(null);
+  useEffect(()=>setReplaySelection(null),[crew.id]);
+  const replayId=replaySelection?.crewId===crew.id?replaySelection.id:null;
+  let bodyHistory:SavedCheckIn[]=[],bodyRecord:SavedCheckIn|undefined,replayError=historyError;
+  if(live&&!historyLoading&&!historyError){try{const window=replayWindow(liveRecords,crew.id,replayId);bodyHistory=window.history;bodyRecord=window.record;}catch(e){replayError=(e as Error).message;}}
+  const evidenceMap:Partial<Record<BodySystem,EvidenceState>>={};
+  if(live&&!historyLoading&&!replayError)for(const system of BODY_SYSTEMS)evidenceMap[system.id]=systemEvidence(system.id,bodyRecord,crew).state;
+  const selectReplay=(id:string|null)=>setReplaySelection(id?{crewId:crew.id,id}:null);
   const [layerMode, setLayerMode] = useState<AnatomyLayerMode>('xray');
   const [autoRotate, setAutoRotate] = useState(false);
   const [sex, setSex] = useState<AnatomySex>('male');
   const [modelStatus, setModelStatus] = useState<AnatomyModelStatus>('loading');
 
   // Purely render the engine/fixture response — no separate medical decision logic in the frontend.
-  const response = voiceResponse && [2, 5].includes(page)
-    ? voiceResponse as unknown as ScenarioResponse
+  const response = live
+    ? liveResponse
+    : voiceResponse && [2, 5].includes(page)
+    ? (voiceResponse as unknown as ScenarioResponse)
     : getScenario(flags);
   useEffect(() => {
-    if (page !== 2 || !response) return;
+    if (live || page !== 2 || !response) return;
     const [sys, dia] = crew.bp?.split(' / ').map(Number) ?? [null, null];
     window.dispatchEvent(new CustomEvent('mednav:investigation-result', { detail: {
       response: asVoiceResponse(response, {
@@ -237,17 +273,17 @@ export function MissionConsole({
         systolic_bp_mm_hg: sys, diastolic_bp_mm_hg: dia,
       }), mode: 'demo',
     } }));
-  }, [page, response, crew]);
+  }, [live, page, response, crew]);
   const view = formatInvestigationView(response);
 
   const focus = evidence[selected];
-  const bp = flags[1] ? (crew.bp ?? view.observationsBp ?? null) : null;
+  const bp = live ? crew.bp : flags[1] ? (crew.bp ?? view.observationsBp ?? null) : null;
   const monitor = flags[0];
 
   const dosimeterAvailable =
-    inventory.find((e) => e.name === 'Personal radiation dosimeter')?.available ?? true;
+    inventory.some((e) => e.name === 'Personal radiation dosimeter' && e.available && e.quantity>0);
   const ultrasoundAvailable =
-    inventory.find((e) => e.name === 'Ultrasound unit')?.available ?? false;
+    inventory.some((e) => e.name === 'Ultrasound unit' && e.available && e.quantity>0);
 
   const part = useMemo(
     () => partInfo(selectedPart, crew, bp),
@@ -259,7 +295,7 @@ export function MissionConsole({
     if (preferredMode) setLayerMode(preferredMode);
   };
 
-  const missing = [
+  const missing = live ? view.missingData : [
     crew.hr === null ? 'Heart rate' : null,
     crew.sleep === null ? 'Sleep' : null,
     crew.radiationDailyMsv === null ? 'Daily radiation dose' : null,
@@ -268,7 +304,7 @@ export function MissionConsole({
   ].filter(Boolean);
 
   const toggleFlag = (i: number) =>
-    setFlags(flags.map((v, j) => (j === i ? !v : v)));
+    {if(live && i===1)return;setFlags(flags.map((v, j) => (j === i ? !v : v)));};
 
   const knownVitalsCount =
     (crew.hr !== null ? 1 : 0) +
@@ -280,7 +316,7 @@ export function MissionConsole({
   ).length;
 
   const crewKey = crew.id.slice(-1).toLowerCase() as 'a' | 'b' | 'c';
-  const activeHistoryDay = history[dayIndex] ?? history[history.length - 1];
+  const activeHistoryDay = history[dayIndex] ?? history[history.length - 1] ?? {} as typeof fixtureHistory[number];
   const dayHr = activeHistoryDay[crewKey];
   const daySleep = activeHistoryDay[`s${crewKey}` as 'sa' | 'sb' | 'sc'];
   const dayRad = activeHistoryDay[`r${crewKey}` as 'ra' | 'rb' | 'rc'];
@@ -303,7 +339,8 @@ export function MissionConsole({
         ? '#F5A623'
         : '#9D7BFF';
 
-    const recordedCount = [
+    const coverageTotal=live?3:8;
+    const recordedCount = live?knownVitalsCount:[
       crew.hr,
       crew.sleep,
       bp,
@@ -314,18 +351,18 @@ export function MissionConsole({
       crew.bodyMassKg,
     ].filter((v) => v !== null).length;
 
-    const blockedBySensorCount =
+    const blockedBySensorCount = live?(bp===null&&!monitor?1:0):
       (bp === null && !monitor ? 1 : 0) +
       (crew.radiationDailyMsv === null && !dosimeterAvailable ? 1 : 0) +
       (crew.ocularCheck === null && !ultrasoundAvailable ? 1 : 0);
-    const unknownOnlyCount = Math.max(0, 8 - recordedCount - blockedBySensorCount);
+    const unknownOnlyCount = Math.max(0, coverageTotal - recordedCount - blockedBySensorCount);
 
-    const recordedPct = Math.round((recordedCount / 8) * 100);
-    const unknownOnlyPct = Math.round((unknownOnlyCount / 8) * 100);
+    const recordedPct = Math.round((recordedCount / coverageTotal) * 100);
+    const unknownOnlyPct = Math.round((unknownOnlyCount / coverageTotal) * 100);
     const blockedPct = Math.max(0, 100 - recordedPct - unknownOnlyPct);
 
     return (
-      <div className="space-home">
+      <div className="space-home" data-testid={live?'engine-status':undefined} data-status={view.status} aria-label={live?'Live investigation result':undefined}>
         {/* OVERVIEW 3-COLUMN INTERACTIVE 3D COMMAND CENTER */}
         <section
           className="overview-dashboard-section"
@@ -342,6 +379,16 @@ export function MissionConsole({
             </div>
 
             <div className="dash-workflow-controls">
+              {live && (
+                <button
+                  type="button"
+                  className="hairline-pill-btn"
+                  disabled={refreshing}
+                  onClick={onRefresh}
+                >
+                  Refresh recorded data
+                </button>
+              )}
               <div
                 className="crew-tabs"
                 role="region"
@@ -486,6 +533,7 @@ export function MissionConsole({
                     </div>
                   </button>
                 </div>
+                {live && <p className="part-note" data-testid="sync-status">{historyError ? 'Synchronization failed. ' : refreshing ? 'Synchronizing recorded data... ' : ''}Last synchronized: {lastSyncedAt || 'Not yet synchronized'}</p>}
               </article>
 
               <article className="command-card symptoms-card">
@@ -523,6 +571,7 @@ export function MissionConsole({
 
             {/* CENTER STAGE: INTERACTIVE 3D HUMAN ANATOMY */}
             <BodyViewer
+              evidence={live?evidenceMap:undefined}
               selectedPart={selectedPart}
               setSelectedPart={setSelectedPart}
               layerMode={layerMode}
@@ -602,20 +651,53 @@ export function MissionConsole({
                     <UserRound size={20} />
                   </div>
                   <div className="selected-title-wrap">
+                    <small>{part.system}</small>
                     <h3>{part.label}</h3>
                   </div>
                 </div>
 
-                <div className="selected-metric">
-                  <span>{part.metric}</span>
-                  <strong
-                    className={
-                      part.value.includes('Unknown') ? 'unknown-val' : ''
-                    }
-                  >
-                    {part.value}
-                  </strong>
-                </div>
+                {live && (
+                  <BodyGraphNavigator
+                    crew={crew}
+                    records={liveRecords}
+                    history={bodyHistory}
+                    record={bodyRecord}
+                    replaying={replayId !== null}
+                    part={selectedPart}
+                    loading={historyLoading}
+                    error={replayError}
+                    onReplay={selectReplay}
+                    onPart={(key) => {
+                      const system = BODY_SYSTEMS.find((s) => s.part === key);
+                      focusPart(key, system?.mode ?? 'organs');
+                    }}
+                    onInvestigate={(id) => onInvestigate?.(id)}
+                  />
+                )}
+                {live && bodyRegion(selectedPart) ? (
+                  <BodySystemMonitoring
+                    part={selectedPart}
+                    crew={crew}
+                    records={bodyHistory}
+                    loading={historyLoading}
+                    error={replayError}
+                    replaying={replayId !== null}
+                    onInvestigate={() => {
+                      if (bodyRecord && onInvestigate) onInvestigate(bodyRecord.id);
+                    }}
+                  />
+                ) : (
+                  <div className="selected-metric">
+                    <span>{part.metric}</span>
+                    <strong
+                      className={
+                        part.value.includes('Unknown') ? 'unknown-val' : ''
+                      }
+                    >
+                      {part.value}
+                    </strong>
+                  </div>
+                )}
               </article>
             </div>
           </div>
@@ -626,10 +708,10 @@ export function MissionConsole({
               <div className="trend-card-head">
                 <div>
                   <span className="wide-planetary-label left-aligned">
-                    7 - D A Y &nbsp; T R E N D
+                    {live && trendMode === 'hr' ? 'S A V E D  H E A L T H  H I S T O R Y' : <>7 - D A Y &nbsp; T R E N D</>}
                   </span>
                   <span className="trend-sub-val">
-                    {crew.id} · D174–D180
+                    {crew.id} · {live ? (trendMode === 'hr' ? 'Timestamped SQLite records (synthetic)' : 'D174–D180 (illustrative)') : 'D174–D180'}
                   </span>
                 </div>
 
@@ -664,9 +746,31 @@ export function MissionConsole({
                 </div>
               </div>
 
-              <div className="trend-chart-wrap" onClick={() => go(2)}>
-                <ResponsiveContainer width="100%" height={180}>
-                  <AreaChart data={history}>
+              {live && trendMode === 'hr' ? (
+                <MissionHealthTimeline
+                  key={crew.id}
+                  crew={crew}
+                  records={liveRecords}
+                  loading={historyLoading}
+                  error={historyError}
+                  onReplay={(id) => {
+                    selectReplay(id);
+                    document.querySelector('.selected-card')?.scrollIntoView({ block: 'center', behavior: 'instant' });
+                  }}
+                  onRegion={(region, id) => {
+                    if (id) selectReplay(id);
+                    focusPart(region, 'organs');
+                    document.querySelector('.selected-card')?.scrollIntoView({
+                      block: 'center',
+                      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+                    });
+                  }}
+                  onInvestigate={(id) => onInvestigate?.(id)}
+                />
+              ) : (
+                <div className="trend-chart-wrap" onClick={() => go(2)}>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <AreaChart data={live && trendMode !== 'hr' ? fixtureHistory : history}>
                     <defs>
                       <linearGradient id="cobaltGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop
@@ -698,7 +802,8 @@ export function MissionConsole({
                     />
                   </AreaChart>
                 </ResponsiveContainer>
-              </div>
+                </div>
+              )}
             </article>
           </div>
         </section>
@@ -711,7 +816,7 @@ export function MissionConsole({
   // ---------------------------------------------------------------------------
   if (page === 5) {
     return (
-      <div className="mission-console space-subpage">
+      <div className="mission-console space-subpage incident-report" data-testid={live?'engine-status':undefined} data-status={view.status} aria-label={live?'Live investigation result':undefined}>
         <div className="subpage-top-bar">
           <button
             type="button"
@@ -724,7 +829,7 @@ export function MissionConsole({
             I N C I D E N T &nbsp; R E P O R T
           </div>
           <span className="hairline-status-tag">
-            PENDING GROUND REVIEW · OFFLINE
+            {live?'LOCAL PREVIEW · NOT TRANSMITTED':'PENDING GROUND REVIEW · OFFLINE'}
           </span>
         </div>
 
@@ -768,7 +873,7 @@ export function MissionConsole({
                 ],
                 [
                   'Microgravity ocular check (SANS):',
-                  crew.ocularCheck ?? 'Unknown',
+                  live?'Ocular assessment not recorded':crew.ocularCheck??'Unknown (illustrative fixture)',
                 ],
                 ['Symptoms:', crew.symptoms.join(', ') || 'None reported'],
                 [
@@ -807,7 +912,9 @@ export function MissionConsole({
 
             <div className="telemetry-kv-row compact">
               <dt>Data Source:</dt>
-              <dd>Synthetic Telemetry</dd>
+              <dd title={liveRecord ? `${liveRecord.id} / ${liveRecord.recorded_at} / ${liveRecord.provenance}` : undefined}>
+                {live ? 'Saved health record / Stable engine; other telemetry illustrative' : 'Synthetic Demo Record / Illustrative fixtures'}
+              </dd>
             </div>
             <div className="telemetry-kv-row compact">
               <dt>Clinical Scope:</dt>
@@ -817,7 +924,7 @@ export function MissionConsole({
             <button
               type="button"
               className="ghost-rect-cta full-width export-json-btn"
-              onClick={() => downloadJSON(crew, inventory, response)}
+              onClick={() => downloadJSON(crew, inventory, response,liveRecord)}
             >
               <Download size={16} />
               <span>Export JSON</span>
@@ -833,7 +940,7 @@ export function MissionConsole({
   // ---------------------------------------------------------------------------
   if (page === 3) {
     return (
-      <div className="mission-console space-subpage">
+      <div className="mission-console space-subpage" data-testid={live?'engine-status':undefined} data-status={view.status} aria-label={live?'Live investigation result':undefined}>
         <div className="subpage-top-bar">
           <button
             type="button"
@@ -860,8 +967,9 @@ export function MissionConsole({
               Simulate Conditions
             </h1>
             <p className="telemetry-summary-copy">
-              Toggle measurement, equipment, and override states to preview
-              next-check routing.
+              {live
+                ? 'BP controls update shared onboard inventory in SQLite. Earth link and manual override are simulation context; saved measurements are unchanged.'
+                : 'Toggle missing measurements, blood-pressure monitor availability, and manual safety override to compare deterministic next-check selection.'}
             </p>
 
             <div className="preset-hairline-row">
@@ -877,7 +985,7 @@ export function MissionConsole({
                 className="hairline-pill-btn"
                 onClick={() => setFlags([false, false, true, false])}
               >
-                Insufficient Evidence (next_check: null)
+                {live?'Earth link online (simulation context)':'Insufficient Evidence (next_check: null)'}
               </button>
               <button
                 type="button"
@@ -889,6 +997,8 @@ export function MissionConsole({
               <button
                 type="button"
                 className="hairline-pill-btn"
+                disabled={live}
+                title={live?'Read-only in live mode. Save a check-in to change blood-pressure data.':undefined}
                 onClick={() => setFlags([false, true, false, false])}
               >
                 BP Recorded
@@ -907,6 +1017,7 @@ export function MissionConsole({
                 <button
                   key={l}
                   role="switch"
+                  disabled={live && i===1}
                   aria-checked={flags[i]}
                   aria-label={l}
                   onClick={() => toggleFlag(i)}
@@ -948,18 +1059,20 @@ export function MissionConsole({
                 <dd>
                   {view.nextCheckEquipment.length > 0
                     ? view.nextCheckEquipment.join(', ')
-                    : 'None'}
+                    : view.hasNextCheck ? 'None required' : 'None (next_check: null)'}
                 </dd>
               </div>
               <div className="telemetry-kv-row compact">
                 <dt>Scenario ID:</dt>
                 <dd>{view.id}</dd>
               </div>
+              {live&&<><div className="telemetry-kv-row compact"><dt>Missing measurements:</dt><dd>{view.missingData.join(', ')||'None returned'}</dd></div><div className="telemetry-kv-row compact"><dt>Medical-officer review:</dt><dd>{view.reviewLabel}</dd></div><div className="telemetry-kv-row compact"><dt>Safety flags:</dt><dd>{view.safetyFlags.join(' · ')||'None returned'}</dd></div></>}
             </dl>
 
             <div className="trace-copy-block">
               <span className="micro-label">WHY SELECTED</span>
               <p>{view.selectedExplanation}</p>
+              {live&&<p className="sheet-footnote">{view.observationsList.join(' · ')}</p>}
             </div>
 
             <div className="trace-copy-block">
@@ -985,7 +1098,7 @@ export function MissionConsole({
   // VIEW 2: HEALTH INVESTIGATION (EVIDENCE & NEXT-CHECK NAVIGATION)
   // ---------------------------------------------------------------------------
   return (
-    <div className="mission-console space-subpage">
+    <div className="mission-console space-subpage" data-testid={live ? 'engine-status' : undefined} data-status={view.status} aria-label={live ? 'Live investigation result' : undefined}>
       <div className="subpage-top-bar">
         <button
           type="button"
@@ -1018,6 +1131,7 @@ export function MissionConsole({
               <button
                 key={l}
                 role="switch"
+                disabled={live && i===1}
                 aria-checked={flags[i]}
                 aria-label={l}
                 onClick={() => toggleFlag(i)}
@@ -1144,10 +1258,13 @@ export function MissionConsole({
                 aria-pressed={selected === 'bp'}
               >
                 <span>
-                  <strong>Blood pressure &amp; microgravity ocular check</strong>
+                  <strong>
+                    {live ? 'Missing recorded measurements' : 'Blood pressure & microgravity ocular check'}
+                  </strong>
                   <small className={!bp || !crew.ocularCheck ? 'unknown-val' : ''}>
-                    BP: {bp ? `${bp} mmHg` : 'Unknown'} · Ocular:{' '}
-                    {crew.ocularCheck ?? 'Unknown'}
+                    {live
+                      ? view.missingData.join(', ') || 'No missing measurements returned.'
+                      : <>BP: {bp ? `${bp} mmHg` : 'Unknown'} · Ocular: {crew.ocularCheck ?? 'Unknown'}</>}
                   </small>
                 </span>
                 <ArrowUpRight size={16} />
@@ -1162,11 +1279,9 @@ export function MissionConsole({
                 aria-pressed={selected === 'resources'}
               >
                 <span>
-                  {monitor
-                    ? 'BP monitor available'
-                    : 'Blocked: BP monitor unavailable'}{' '}
-                  · Ultrasound:{' '}
-                  {ultrasoundAvailable ? 'Available' : 'Unavailable'}
+                  {live
+                    ? view.resourceConstraintsList.join(' · ') || 'No resource constraints returned.'
+                    : <>{monitor ? 'BP monitor available' : 'Blocked: BP monitor unavailable'} · Ultrasound: {ultrasoundAvailable ? 'Available' : 'Unavailable'}</>}
                 </span>
                 <ArrowUpRight size={15} />
               </button>
@@ -1184,7 +1299,7 @@ export function MissionConsole({
                     ? 'ESCALATED'
                     : view.hasNextCheck
                     ? 'FEASIBLE'
-                    : 'NO CHECK'}
+                    : 'NEXT_CHECK: NULL'}
                 </span>
               </div>
               <button
@@ -1199,7 +1314,9 @@ export function MissionConsole({
                   <strong>{view.nextCheckTitle}</strong>
                   <small>
                     Status: {view.status} ·{' '}
-                    {view.status === 'escalate'
+                    {live
+                      ? `Medical-officer review: ${view.reviewLabel}`
+                      : view.status === 'escalate'
                       ? 'Manual emergency override'
                       : 'Medical officer review required'}
                   </small>

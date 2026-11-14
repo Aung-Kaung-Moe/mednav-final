@@ -10,12 +10,12 @@ export type Crew = {
   /* Space Radiation & Microgravity Measurements (Synthetic Demo Data) */
   radiationDailyMsv: number | null;
   radiationCumulativeMsv: number | null;
-  radiationBaselineMsv: number;
+  radiationBaselineMsv: number | null;
   countermeasureMin: number | null;
-  countermeasureTargetMin: number;
+  countermeasureTargetMin: number | null;
   ocularCheck: string | null;
   bodyMassKg: number | null;
-  baselineMassKg: number;
+  baselineMassKg: number | null;
 };
 
 export type Equipment = {
@@ -59,7 +59,7 @@ export const crews: Crew[] = [
     radiationBaselineMsv: 0.55,
     countermeasureMin: 120,
     countermeasureTargetMin: 120,
-    ocularCheck: 'Optic sheath 5.1 mm (Recorded)',
+    ocularCheck: 'Illustrative optic sheath 5.1 mm (not recorded)',
     bodyMassKg: 68.4,
     baselineMassKg: 68.8,
   },
