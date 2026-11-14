@@ -19,11 +19,9 @@ import {
   ScanLine,
   Search,
   RefreshCw,
-  Mic,
   ShieldCheck,
 } from 'lucide-react';
 import { MissionConsole } from './components/MissionConsole';
-import { VoiceCheckIn } from './components/VoiceCheckIn';
 import VoiceAssistant from './voice/VoiceAssistant';
 import { configureVoiceDemo } from './voice/currentDemo';
 import type { InvestigationResponse } from './voice/types';
@@ -287,28 +285,21 @@ function CheckIn({
   const [review, setReview] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
-  const [voiceOpen, setVoiceOpen] = useState(false);
   const [syncedNotice, setSyncedNotice] = useState(false);
 
   const syncSensors = () => {
-    setHr(crew.hr !== null ? String(crew.hr) : String(crew.baseline));
+    setHr(crew.hr?.toString() ?? '');
     setSleep(
-      crew.sleep !== null ? String(crew.sleep) : String(crew.sleepBaseline)
+      crew.sleep?.toString() ?? ''
     );
     setRad(
-      crew.radiationDailyMsv !== null
-        ? String(crew.radiationDailyMsv)
-        : String(crew.radiationBaselineMsv)
+      crew.radiationDailyMsv?.toString() ?? ''
     );
     setAred(
-      crew.countermeasureMin !== null
-        ? String(crew.countermeasureMin)
-        : String(crew.countermeasureTargetMin)
+      crew.countermeasureMin?.toString() ?? ''
     );
     setMass(
-      crew.bodyMassKg !== null
-        ? String(crew.bodyMassKg)
-        : String(crew.baselineMassKg)
+      crew.bodyMassKg?.toString() ?? ''
     );
     setSyncedNotice(true);
   };
@@ -427,40 +418,7 @@ function CheckIn({
                   </span>
                 </button>
 
-                <button
-                  type="button"
-                  className={`hairline-pill-btn ${voiceOpen ? 'active' : ''}`}
-                  aria-expanded={voiceOpen}
-                  onClick={() => setVoiceOpen((v) => !v)}
-                >
-                  <Mic size={14} />
-                  <span>{voiceOpen ? 'Hide Voice' : 'Hands-Free Voice'}</span>
-                </button>
               </div>
-
-              {voiceOpen && (
-                <VoiceCheckIn
-                  onApply={(parsed) => {
-                    if (parsed.clearSymptoms) {
-                      setSymptoms([]);
-                    } else if (parsed.symptoms && parsed.symptoms.length > 0) {
-                      setSymptoms(parsed.symptoms);
-                    }
-                    if (parsed.hr !== undefined && parsed.hr !== null) {
-                      setHr(parsed.hr);
-                    }
-                    if (parsed.sleep !== undefined && parsed.sleep !== null) {
-                      setSleep(parsed.sleep);
-                    }
-                    if (parsed.sys !== undefined && parsed.sys !== null) {
-                      setSys(parsed.sys);
-                    }
-                    if (parsed.dia !== undefined && parsed.dia !== null) {
-                      setDia(parsed.dia);
-                    }
-                  }}
-                />
-              )}
 
               <fieldset>
                 <div className="fieldset-header">
@@ -580,16 +538,6 @@ function CheckIn({
                         </div>
                       </div>
                       <div className="field-stepper-input">
-                        <button
-                          type="button"
-                          className="field-step-btn"
-                          aria-label={`Decrease ${f.label}`}
-                          onClick={() =>
-                            stepValue(f.val, f.set, -f.step, f.min, f.decimals)
-                          }
-                        >
-                          -
-                        </button>
                         <input
                           id={`field-${f.id}`}
                           type="number"
@@ -600,16 +548,28 @@ function CheckIn({
                           placeholder="Unknown"
                           onChange={(e) => f.set(e.target.value)}
                         />
-                        <button
-                          type="button"
-                          className="field-step-btn"
-                          aria-label={`Increase ${f.label}`}
-                          onClick={() =>
-                            stepValue(f.val, f.set, f.step, f.min, f.decimals)
-                          }
-                        >
-                          +
-                        </button>
+                        <div className="field-step-actions">
+                          <button
+                            type="button"
+                            className="field-step-btn"
+                            aria-label={`Decrease ${f.label}`}
+                            onClick={() =>
+                              stepValue(f.val, f.set, -f.step, f.min, f.decimals)
+                            }
+                          >
+                            −
+                          </button>
+                          <button
+                            type="button"
+                            className="field-step-btn"
+                            aria-label={`Increase ${f.label}`}
+                            onClick={() =>
+                              stepValue(f.val, f.set, f.step, f.min, f.decimals)
+                            }
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -739,6 +699,7 @@ function MedicalInventory({
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState('Monitoring');
   const [newQty, setNewQty] = useState('1');
+  const [newExpiresAt, setNewExpiresAt] = useState('');
   const [newAvailable, setNewAvailable] = useState(true);
   const [formError, setFormError] = useState('');
 
@@ -746,8 +707,20 @@ function MedicalInventory({
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState('Monitoring');
   const [editQty, setEditQty] = useState('1');
+  const [editExpiresAt, setEditExpiresAt] = useState('');
   const [editAvailable, setEditAvailable] = useState(true);
   const [editError, setEditError] = useState('');
+
+  const getExpirationStatus = (expiresAt?: string | null) => {
+    if (!expiresAt) return null;
+    const expTime = new Date(`${expiresAt}T00:00:00`).getTime();
+    if (Number.isNaN(expTime)) return null;
+    const now = Date.now();
+    const daysLeft = Math.ceil((expTime - now) / (1000 * 60 * 60 * 24));
+    if (daysLeft < 0) return 'expired' as const;
+    if (daysLeft <= 60) return 'expiring' as const;
+    return 'valid' as const;
+  };
 
   const syncBpFlag = (nextInventory: Equipment[]) => {
     const bpMonitor = nextInventory.find(
@@ -772,12 +745,19 @@ function MedicalInventory({
     const qty = Math.max(0, Number(newQty) || 0);
     const next = [
       ...inventory,
-      { name: trimmed, category: newCategory, quantity: qty, available: newAvailable },
+      {
+        name: trimmed,
+        category: newCategory,
+        quantity: qty,
+        available: newAvailable,
+        expiresAt: newExpiresAt || null,
+      },
     ];
     setInventory(next);
     syncBpFlag(next);
     setNewName('');
     setNewQty('1');
+    setNewExpiresAt('');
     setNewAvailable(true);
     setFormError('');
   };
@@ -787,6 +767,7 @@ function MedicalInventory({
     setEditName(item.name);
     setEditCategory(item.category);
     setEditQty(String(item.quantity));
+    setEditExpiresAt(item.expiresAt ?? '');
     setEditAvailable(item.available);
     setEditError('');
   };
@@ -812,6 +793,7 @@ function MedicalInventory({
             category: editCategory,
             quantity: qty,
             available: editAvailable,
+            expiresAt: editExpiresAt || null,
           }
         : item
     );
@@ -980,6 +962,15 @@ function MedicalInventory({
                         />
                       </label>
                     </div>
+                    <label className="edit-field-label">
+                      <span>Expiration Date (optional)</span>
+                      <input
+                        aria-label="Edit expiration date"
+                        type="date"
+                        value={editExpiresAt}
+                        onChange={(ev) => setEditExpiresAt(ev.target.value)}
+                      />
+                    </label>
                     <label className="equip-check-inline">
                       <input
                         type="checkbox"
@@ -1032,6 +1023,19 @@ function MedicalInventory({
                     </div>
 
                     <strong className="equip-card-title">{e.name}</strong>
+
+                    {(e.expiresAt || e.category === 'Supplies') && (() => {
+                      const expState = getExpirationStatus(e.expiresAt);
+                      return (
+                        <div className={`equip-expiry-line ${expState ?? 'unknown'}`}>
+                          <span>
+                            EXP: {e.expiresAt ?? 'Unknown'}
+                          </span>
+                          {expState === 'expired' && <strong>EXPIRED</strong>}
+                          {expState === 'expiring' && <strong>EXPIRING SOON</strong>}
+                        </div>
+                      );
+                    })()}
 
                     <div className="equip-card-footer">
                       <div
@@ -1132,6 +1136,27 @@ function MedicalInventory({
                 {flags[0] ? 'Available' : 'Unavailable'}
               </dd>
             </div>
+            <div className="telemetry-kv-row compact">
+              <dt>Expiring / Expired:</dt>
+              <dd
+                className={
+                  inventory.some((item) => {
+                    const s = getExpirationStatus(item.expiresAt);
+                    return s === 'expiring' || s === 'expired';
+                  })
+                    ? 'unknown-val'
+                    : ''
+                }
+              >
+                {
+                  inventory.filter((item) => {
+                    const s = getExpirationStatus(item.expiresAt);
+                    return s === 'expiring' || s === 'expired';
+                  }).length
+                }{' '}
+                Items
+              </dd>
+            </div>
           </dl>
 
           <div className="sheet-divider" />
@@ -1175,6 +1200,15 @@ function MedicalInventory({
                 />
               </label>
             </div>
+            <label>
+              Expiration Date (optional)
+              <input
+                aria-label="New equipment expiration date"
+                type="date"
+                value={newExpiresAt}
+                onChange={(e) => setNewExpiresAt(e.target.value)}
+              />
+            </label>
             <label className="equip-check-inline">
               <input
                 type="checkbox"

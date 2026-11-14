@@ -23,6 +23,7 @@ export type Equipment = {
   category: string;
   quantity: number;
   available: boolean;
+  expiresAt?: string | null;
 };
 
 export const crews: Crew[] = [
@@ -89,8 +90,10 @@ export const equipment: Equipment[] = [
   { name: 'Digital thermometer', category: 'Monitoring', quantity: 2, available: true },
   { name: 'Crew check-in tablet', category: 'Documentation', quantity: 2, available: true },
   { name: 'Ultrasound unit', category: 'Imaging', quantity: 1, available: false },
-  { name: 'ARED resistance telemetry', category: 'Monitoring', quantity: 1, available: true },
-  { name: 'Medical supply kit', category: 'Supplies', quantity: 2, available: true },
+  { name: 'ARED resistance telemetry', category: 'Monitoring', quantity: 1, available: true, expiresAt: null },
+  { name: 'Medical supply kit', category: 'Supplies', quantity: 2, available: true, expiresAt: '2027-06-30' },
+  { name: 'Sterile saline packs', category: 'Supplies', quantity: 6, available: true, expiresAt: '2026-12-10' },
+  { name: 'Antiseptic & wound strips', category: 'Supplies', quantity: 12, available: true, expiresAt: '2027-09-15' },
 ];
 
 export const history = [174, 175, 176, 177, 178, 179, 180].map((day, i) => ({
