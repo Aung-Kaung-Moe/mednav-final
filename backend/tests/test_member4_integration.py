@@ -134,4 +134,6 @@ def test_invalid_package_does_not_create_database(tmp_path):
 def test_snapshot_matches_original_manifest():
     manifest = json.loads((PACKAGE.parents[1] / "integration/member4_manifest.json").read_text())
     for name, digest in manifest.items():
-        assert hashlib.sha256((PACKAGE / name).read_bytes()).hexdigest() == digest
+        data=(PACKAGE / name).read_bytes()
+        # Only the Git-for-Windows CRLF checkout transformation is allowed.
+        assert digest in {hashlib.sha256(data).hexdigest(),hashlib.sha256(data.replace(b'\r\n',b'\n')).hexdigest()}

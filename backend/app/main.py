@@ -73,6 +73,8 @@ def create_app(database_url: str | None = None, *, adapter: InvestigationAdapter
     app = FastAPI(title="MEDNAV Synthetic Backend", version="0.1.0", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.sessions = sessions
     app.state.engine = engine
+    from .voice import router as voice_router
+    app.include_router(voice_router)
     app.state.investigation_mode = mode
     from .real_engine import RealEngineService
     app.state.real_engine = RealEngineService() if mode == "real" else None

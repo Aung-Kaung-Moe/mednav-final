@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import {useBackend} from './api';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowUpRight,
@@ -36,15 +37,16 @@ const value = (v: number | string | null, unit = '') =>
 function App() {
   const [page, setPage] = useState(0);
   const [crewId, setCrewId] = useState('Crew A');
-  const [profiles, setProfiles] = useState(crews);
-  const [inventory, setInventory] = useState(equipment);
+  const backend=useBackend(crewId);
+  const {profiles,inventory,flags}=backend;
   const [mobile, setMobile] = useState(false);
   const [, setActivity] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
-  const [flags, setFlags] = useState([false, false, false, false]);
+  const setFlags=(update:boolean[]|((f:boolean[])=>boolean[]))=>backend.changeFlags(typeof update==='function'?update(flags):update);
 
-  const crew = profiles.find((c) => c.id === crewId)!;
+  useEffect(()=>{if(backend.initialized&&profiles.length&&!profiles.some(c=>c.id===crewId))setCrewId(profiles[0].id);},[backend.initialized,profiles,crewId]);
+  const crew = profiles.find((c) => c.id === crewId) ?? profiles[0];
 
   const go = (p: number) => {
     setPage(p);
@@ -138,6 +140,7 @@ function App() {
               <span>CREW</span>
               <select
                 value={crewId}
+                disabled={backend.live&&!backend.initialized}
                 onChange={(e) => handleSelectCrew(e.target.value)}
               >
                 {profiles.map((c) => (
@@ -159,43 +162,37 @@ function App() {
         </header>
 
         <main id="main">
-        {isConsolePage && (
+        {backend.live&&backend.busy&&<p role="status" className="sheet-footnote">Evaluating…</p>}
+        {backend.error&&<p role="alert" className="error">{backend.error} <button className="hairline-pill-btn" onClick={backend.retry}>Retry backend</button></p>}
+        {isConsolePage && (!backend.live || backend.result!==null) && (
           <MissionConsole
             key={page}
             crew={crew}
             profiles={profiles}
             onSelectCrew={handleSelectCrew}
             inventory={inventory}
+            live={backend.live}
+            liveResponse={backend.result}
+            liveHistory={backend.history}
+            liveRecord={backend.record}
             flags={flags}
-            setFlags={(f) => {
-              setFlags(f);
-              setInventory((v) =>
-                v.map((e) =>
-                  e.name === 'Blood-pressure monitor'
-                    ? { ...e, available: f[0] }
-                    : e
-                )
-              );
-            }}
+            setFlags={backend.changeFlags}
             page={page}
             go={go}
           />
         )}
 
-        {page === 1 && (
+        {page === 1 && (!backend.live||backend.initialized) && (
           <CheckIn
             key={crew.id}
             crew={crew}
-            save={(c) => {
-              setProfiles((p) => p.map((x) => (x.id === c.id ? c : x)));
-              setFlags((f) => [f[0], c.bp !== null, f[2], f[3]]);
-              setActivity((a) => [`${c.id} · Check-in saved`, ...a]);
-            }}
+            save={backend.save}
             investigate={() => go(2)}
+            live={backend.live}
           />
         )}
 
-        {page === 4 && (
+        {page === 4 && (!backend.live||backend.initialized) && (
           <div className="space-subpage">
             <div className="asymmetric-workspace-grid">
               <section className="left-telemetry-column">
@@ -277,17 +274,10 @@ function App() {
                         <button
                           type="button"
                           className="hairline-pill-btn"
+                          disabled={backend.busy||(!e.available&&e.quantity===0)}
+                          title={!e.available&&e.quantity===0?'Cannot enable zero-quantity equipment. Quantity changes require the inventory API.':undefined}
                           onClick={() => {
-                            setInventory((v) =>
-                              v.map((x) =>
-                                x.name === e.name
-                                  ? { ...x, available: !x.available }
-                                  : x
-                              )
-                            );
-                            if (e.name === 'Blood-pressure monitor') {
-                              setFlags((f) => [!e.available, f[1], f[2], f[3]]);
-                            }
+                            void backend.updateInventory(e.name,!e.available);
                           }}
                         >
                           Mark {e.available ? 'Unavailable' : 'Usable'}
@@ -326,7 +316,13 @@ function App() {
 
         <footer>
           <span>MEDNAV · ASTRONAUT HEALTH MONITORING</span>
-          <span>SYNTHETIC DATA · OFFLINE MODE</span>
+          <span role="status" data-testid="backend-status" data-check-in-id={backend.savedId} title="Radiation, microgravity and anatomy telemetry remain illustrative. Earth-offline context is separate from local server connectivity.">{backend.live?'SYNTHETIC DATA · LIVE BACKEND':'SYNTHETIC DATA · LOCAL FIXTURE MODE'}</span>
+          <details aria-label="Developer tools">
+            <summary>Developer tools</summary>
+            <label>Data mode <select aria-label="Data mode" value={backend.live?'live':'fixture'} onChange={e=>{const params=new URLSearchParams(location.search);if(e.target.value==='fixture')params.set('mode','fixture');else params.delete('mode');location.search=params.toString();}}><option value="live">Live FastAPI + Stable engine</option><option value="fixture">Local fixture fallback (explicit)</option></select></label>
+            <p>Saved check-in: {backend.savedId||'None'}. Radiation, microgravity and anatomy telemetry are illustrative. Fixtures are scripted and nonpersistent.</p>
+            {backend.live&&backend.result&&<pre aria-label="Backend diagnostics" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(backend.result,null,2)}</pre>}
+          </details>
         </footer>
         </main>
       </div>
@@ -360,10 +356,12 @@ function CheckIn({
   crew,
   save,
   investigate,
+  live,
 }: {
   crew: Crew;
-  save: (c: Crew) => void;
+  save: (c: Crew) => Promise<void>;
   investigate: () => void;
+  live:boolean;
 }) {
   const [symptoms, setSymptoms] = useState(crew.symptoms);
   const [hr, setHr] = useState(crew.hr?.toString() || '');
@@ -376,6 +374,7 @@ function CheckIn({
   const [review, setReview] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [saving,setSaving]=useState(false);
 
   const draft: Crew = {
     ...crew,
@@ -415,6 +414,7 @@ function CheckIn({
             </div>
           ) : review ? (
             <div>
+              {error&&<p role="alert">{error}</p>}
               <Observation crew={draft} />
               <div className="review-actions">
                 <button
@@ -425,12 +425,13 @@ function CheckIn({
                 </button>
                 <button
                   className="ghost-rect-cta"
-                  onClick={() => {
-                    save(draft);
-                    setSaved(true);
+                  disabled={saving}
+                  onClick={async () => {
+                    setSaving(true);setError('');
+                    try {await save(draft);setSaved(true);}catch(e){setError((e as Error).message);}finally{setSaving(false);}
                   }}
                 >
-                  <span>Save Check-In</span>
+                  <span>{saving?'Saving…':'Save Check-In'}</span>
                   <ArrowUpRight size={18} />
                 </button>
               </div>
@@ -439,9 +440,9 @@ function CheckIn({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (Boolean(sys) !== Boolean(dia)) {
+                if (Boolean(sys) !== Boolean(dia) || (sys!=='' && (!/^[1-9][0-9]{0,3}$/.test(sys)||!/^[1-9][0-9]{0,3}$/.test(dia)))) {
                   setError(
-                    'Enter both blood-pressure values or leave both Unknown.'
+                    'Enter both blood-pressure values as positive whole numbers (1–4 digits) or leave both Unknown.'
                   );
                   return;
                 }
@@ -455,6 +456,8 @@ function CheckIn({
                     setSymptoms([]);
                   } else if (parsed.symptoms && parsed.symptoms.length > 0) {
                     setSymptoms(parsed.symptoms);
+                  } else if(parsed.removeSymptoms?.length) {
+                    setSymptoms(previous=>previous.filter(s=>!parsed.removeSymptoms!.includes(s)));
                   }
                   if (parsed.hr !== undefined && parsed.hr !== null) {
                     setHr(parsed.hr);
@@ -531,6 +534,7 @@ function CheckIn({
                           type="button"
                           className="unknown-option"
                           aria-pressed={isUnknown}
+                          disabled={live&&i>=4}
                           onClick={() => {
                             if (i === 2 || i === 3) {
                               setSys('');
@@ -545,10 +549,12 @@ function CheckIn({
                       </div>
                       <input
                         id={`field-${i}`}
+                        readOnly={live&&i>=4}
+                        title={live&&i>=4?'Illustrative only: no approved persistence contract.':undefined}
                         type="number"
-                        min={i === 1 || i === 5 ? 0 : 0.01}
+                        min={i===2||i===3?1:i === 1 || i === 5 ? 0 : 0.01}
                         max={i === 1 ? 24 : undefined}
-                        step="any"
+                        step={i===2||i===3?'1':'any'}
                         value={v as string}
                         placeholder="Unknown"
                         onChange={(e) =>

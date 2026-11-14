@@ -73,11 +73,15 @@ export function formatInvestigationView(res: ScenarioResponse | null) {
       nextCheckEquipment: [] as string[],
       hasNextCheck: false,
       selectedExplanation:
-        'No permissible next check returned by the engine for the current observations and usable equipment.',
+        'No investigation response is available.',
       excludedExplanation:
-        'Candidate checks requiring unavailable equipment or missing prerequisites are excluded by the engine.',
+        'No exclusion explanation is available.',
       resourceConstraintsList: [] as string[],
       observationsBp: null as string | null,
+      observationsList: [] as string[],
+      missingData: [] as string[],
+      safetyFlags: [] as string[],
+      reviewLabel: 'Unavailable',
     };
   }
 
@@ -96,8 +100,8 @@ export function formatInvestigationView(res: ScenarioResponse | null) {
   const excludedExplanation =
     typeof res.explanation === 'string'
       ? res.resource_constraints && Array.isArray(res.resource_constraints) && res.resource_constraints.length > 0
-        ? `Resource constraints reported by engine: ${res.resource_constraints.join(', ')}.`
-        : 'Evaluated deterministically by the backend decision engine.'
+        ? res.resource_constraints.join(' · ')
+        : 'No separate exclusion explanation was returned. See the engine explanation above.'
       : (res.explanation.excluded ?? '');
 
   const observationsBp =
@@ -142,7 +146,7 @@ export function formatInvestigationView(res: ScenarioResponse | null) {
     nextCheckTitle:
       nextTitle ??
       (res.status === 'escalate'
-        ? 'Follow approved emergency protocol (next_check: null)'
+        ? 'Escalation demo — no next check (next_check: null)'
         : 'No permissible next check (next_check: null)'),
     nextCheckEquipment: nextEquip,
     hasNextCheck: res.next_check !== null,
@@ -150,5 +154,9 @@ export function formatInvestigationView(res: ScenarioResponse | null) {
     excludedExplanation,
     resourceConstraintsList,
     observationsBp,
+    observationsList: Array.isArray(res.observations)?res.observations:[],
+    missingData: res.missing_data,
+    safetyFlags: res.safety_flags,
+    reviewLabel: res.requires_medical_officer_review?'Required':'Not required by returned result',
   };
 }

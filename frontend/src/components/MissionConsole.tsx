@@ -28,7 +28,7 @@ import {
   Area,
   XAxis,
 } from 'recharts';
-import { history, type Crew, type Equipment } from '../data/fixtures';
+import { history as fixtureHistory, type Crew, type Equipment } from '../data/fixtures';
 import { getScenario } from '../data/scenarios';
 import {
   formatInvestigationView,
@@ -41,9 +41,14 @@ import {
   type AnatomySex,
 } from '../data/anatomy';
 import { BodyViewer } from './BodyViewer';
+import type {SavedCheckIn} from '../types/api';
 import '../console.css';
 
 type Props = {
+  live?: boolean;
+  liveResponse?: ScenarioResponse | null;
+  liveHistory?: Record<string,unknown>[];
+  liveRecord?:SavedCheckIn|null;
   crew: Crew;
   profiles: Crew[];
   onSelectCrew: (id: string) => void;
@@ -79,7 +84,7 @@ const evidence = {
   },
   next: {
     title: 'Next step selection',
-    text: 'Selected deterministically from verified mission checklists.',
+    text: 'Returned by the prototype catalog and rules. Not a clinically validated mission checklist.',
     links: ['known', 'unknown', 'resource', 'next'],
   },
 };
@@ -176,13 +181,15 @@ function AstronautBadge() {
 function downloadJSON(
   crew: Crew,
   inventory: Equipment[],
-  response: ScenarioResponse | null
+  response: ScenarioResponse | null,
+  liveRecord?:SavedCheckIn|null
 ) {
   const sample = {
     project: 'MEDNAV',
     dataset_type: 'synthetic',
     exported_at: new Date().toISOString(),
-    subject: crew,
+    subject: liveRecord?{...liveRecord,baseline:crew.baseline,sleepBaseline:crew.sleepBaseline}:crew,
+    ...(liveRecord?{illustrative_telemetry:{radiationDailyMsv:crew.radiationDailyMsv,radiationCumulativeMsv:crew.radiationCumulativeMsv,countermeasureMin:crew.countermeasureMin,bodyMassKg:crew.bodyMassKg,ocularCheck:crew.ocularCheck},persistence:'Local preview/export only; investigation/report not persisted or transmitted.'}:{}),
     inventory,
     investigation_response: response,
     note: 'All fields are synthetic demonstration values, not clinical data or diagnosis.',
@@ -201,6 +208,7 @@ function downloadJSON(
 }
 
 export function MissionConsole({
+  live=false, liveResponse=null, liveHistory=[], liveRecord=null,
   crew,
   profiles,
   onSelectCrew,
@@ -210,6 +218,7 @@ export function MissionConsole({
   page,
   go,
 }: Props) {
+  const history = (live ? liveHistory : fixtureHistory) as typeof fixtureHistory;
   const [selected, setSelected] = useState<keyof typeof evidence>('bp');
   const [drawer, setDrawer] = useState(false);
   const [dayIndex, setDayIndex] = useState(history.length - 1);
@@ -221,17 +230,17 @@ export function MissionConsole({
   const [modelStatus, setModelStatus] = useState<AnatomyModelStatus>('loading');
 
   // Purely render the engine/fixture response — no separate medical decision logic in the frontend.
-  const response = getScenario(flags);
+  const response = live ? liveResponse : getScenario(flags);
   const view = formatInvestigationView(response);
 
   const focus = evidence[selected];
-  const bp = flags[1] ? (crew.bp ?? view.observationsBp ?? null) : null;
+  const bp = live ? crew.bp : flags[1] ? (crew.bp ?? view.observationsBp ?? null) : null;
   const monitor = flags[0];
 
   const dosimeterAvailable =
-    inventory.find((e) => e.name === 'Personal radiation dosimeter')?.available ?? true;
+    inventory.some((e) => e.name === 'Personal radiation dosimeter' && e.available && e.quantity>0);
   const ultrasoundAvailable =
-    inventory.find((e) => e.name === 'Ultrasound unit')?.available ?? false;
+    inventory.some((e) => e.name === 'Ultrasound unit' && e.available && e.quantity>0);
 
   const part = useMemo(
     () => partInfo(selectedPart, crew, bp),
@@ -243,7 +252,7 @@ export function MissionConsole({
     if (preferredMode) setLayerMode(preferredMode);
   };
 
-  const missing = [
+  const missing = live ? view.missingData : [
     crew.hr === null ? 'Heart rate' : null,
     crew.sleep === null ? 'Sleep' : null,
     crew.radiationDailyMsv === null ? 'Daily radiation dose' : null,
@@ -252,7 +261,7 @@ export function MissionConsole({
   ].filter(Boolean);
 
   const toggleFlag = (i: number) =>
-    setFlags(flags.map((v, j) => (j === i ? !v : v)));
+    {if(live && i===1)return;setFlags(flags.map((v, j) => (j === i ? !v : v)));};
 
   const knownVitalsCount =
     (crew.hr !== null ? 1 : 0) +
@@ -264,7 +273,7 @@ export function MissionConsole({
   ).length;
 
   const crewKey = crew.id.slice(-1).toLowerCase() as 'a' | 'b' | 'c';
-  const activeHistoryDay = history[dayIndex] ?? history[history.length - 1];
+  const activeHistoryDay = history[dayIndex] ?? history[history.length - 1] ?? {} as typeof fixtureHistory[number];
   const dayHr = activeHistoryDay[crewKey];
   const daySleep = activeHistoryDay[`s${crewKey}` as 'sa' | 'sb' | 'sc'];
   const dayRad = activeHistoryDay[`r${crewKey}` as 'ra' | 'rb' | 'rc'];
@@ -309,7 +318,7 @@ export function MissionConsole({
     const blockedPct = Math.max(0, 100 - recordedPct - unknownOnlyPct);
 
     return (
-      <div className="space-home">
+      <div className="space-home" data-testid={live?'engine-status':undefined} data-status={view.status} aria-label={live?'Live investigation result':undefined}>
         {/* OVERVIEW 3-COLUMN INTERACTIVE 3D COMMAND CENTER */}
         <section
           className="overview-dashboard-section"
@@ -757,10 +766,10 @@ export function MissionConsole({
               <div className="trend-card-head">
                 <div>
                   <span className="wide-planetary-label left-aligned">
-                    7 - D A Y &nbsp; T E L E M E T R Y &nbsp; T R E N D
+                    {live&&trendMode==='hr'?'S A V E D  H E A L T H  H I S T O R Y':<>7 - D A Y &nbsp; T E L E M E T R Y &nbsp; T R E N D</>}
                   </span>
                   <span className="trend-sub-val">
-                    {crew.id} · D174–D180 (Synthetic)
+                    {crew.id} · {live?(trendMode==='hr'?'Timestamped SQLite records (synthetic)':'D174–D180 (illustrative)'):'D174–D180 (Synthetic)'}
                   </span>
                 </div>
 
@@ -797,7 +806,7 @@ export function MissionConsole({
 
               <div className="trend-chart-wrap" onClick={() => go(2)}>
                 <ResponsiveContainer width="100%" height={195}>
-                  <AreaChart data={history}>
+                  <AreaChart data={live&&trendMode!=='hr'?fixtureHistory:history}>
                     <defs>
                       <linearGradient id="cobaltGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop
@@ -927,7 +936,7 @@ export function MissionConsole({
   // ---------------------------------------------------------------------------
   if (page === 5) {
     return (
-      <div className="mission-console space-subpage">
+      <div className="mission-console space-subpage" data-testid={live?'engine-status':undefined} data-status={view.status} aria-label={live?'Live investigation result':undefined}>
         <div className="subpage-top-bar">
           <button
             type="button"
@@ -940,7 +949,7 @@ export function MissionConsole({
             I N C I D E N T &nbsp; R E P O R T
           </div>
           <span className="hairline-status-tag">
-            PENDING GROUND REVIEW · OFFLINE
+            {live?'LOCAL PREVIEW · NOT TRANSMITTED':'PENDING GROUND REVIEW · OFFLINE'}
           </span>
         </div>
 
@@ -1023,7 +1032,7 @@ export function MissionConsole({
 
             <div className="telemetry-kv-row compact">
               <dt>Data Source:</dt>
-              <dd>Synthetic Demo Record</dd>
+              <dd title={liveRecord?`${liveRecord.id} / ${liveRecord.recorded_at} / ${liveRecord.provenance}`:undefined}>{live?'Saved synthetic record / Stable engine':'Synthetic Demo Record'}</dd>
             </div>
             <div className="telemetry-kv-row compact">
               <dt>Clinical Scope:</dt>
@@ -1033,7 +1042,7 @@ export function MissionConsole({
             <button
               type="button"
               className="ghost-rect-cta full-width export-json-btn"
-              onClick={() => downloadJSON(crew, inventory, response)}
+              onClick={() => downloadJSON(crew, inventory, response,liveRecord)}
             >
               <Download size={16} />
               <span>Download Demo JSON</span>
@@ -1049,7 +1058,7 @@ export function MissionConsole({
   // ---------------------------------------------------------------------------
   if (page === 3) {
     return (
-      <div className="mission-console space-subpage">
+      <div className="mission-console space-subpage" data-testid={live?'engine-status':undefined} data-status={view.status} aria-label={live?'Live investigation result':undefined}>
         <div className="subpage-top-bar">
           <button
             type="button"
@@ -1076,9 +1085,7 @@ export function MissionConsole({
               Simulate Health &amp; Equipment Conditions
             </h1>
             <p className="telemetry-summary-copy">
-              Toggle missing measurements, blood-pressure monitor availability,
-              and manual safety override to compare deterministic next-check
-              selection.
+              {live?'BP controls update shared onboard inventory in SQLite. Earth link and manual override are simulation context; saved measurements are unchanged.':'Toggle missing measurements, blood-pressure monitor availability, and manual safety override to compare deterministic next-check selection.'}
             </p>
 
             <div className="preset-hairline-row">
@@ -1094,7 +1101,7 @@ export function MissionConsole({
                 className="hairline-pill-btn"
                 onClick={() => setFlags([false, false, true, false])}
               >
-                Insufficient Evidence (next_check: null)
+                {live?'Earth link online (simulation context)':'Insufficient Evidence (next_check: null)'}
               </button>
               <button
                 type="button"
@@ -1106,6 +1113,8 @@ export function MissionConsole({
               <button
                 type="button"
                 className="hairline-pill-btn"
+                disabled={live}
+                title={live?'Read-only in live mode. Save a check-in to change blood-pressure data.':undefined}
                 onClick={() => setFlags([false, true, false, false])}
               >
                 BP Recorded
@@ -1124,6 +1133,7 @@ export function MissionConsole({
                 <button
                   key={l}
                   role="switch"
+                  disabled={live && i===1}
                   aria-checked={flags[i]}
                   aria-label={l}
                   onClick={() => toggleFlag(i)}
@@ -1165,18 +1175,20 @@ export function MissionConsole({
                 <dd>
                   {view.nextCheckEquipment.length > 0
                     ? view.nextCheckEquipment.join(', ')
-                    : 'None (next_check: null)'}
+                    : view.hasNextCheck?'None required':'None (next_check: null)'}
                 </dd>
               </div>
               <div className="telemetry-kv-row compact">
                 <dt>Scenario ID:</dt>
                 <dd>{view.id}</dd>
               </div>
+              {live&&<><div className="telemetry-kv-row compact"><dt>Missing measurements:</dt><dd>{view.missingData.join(', ')||'None returned'}</dd></div><div className="telemetry-kv-row compact"><dt>Medical-officer review:</dt><dd>{view.reviewLabel}</dd></div><div className="telemetry-kv-row compact"><dt>Safety flags:</dt><dd>{view.safetyFlags.join(' · ')||'None returned'}</dd></div></>}
             </dl>
 
             <div className="trace-copy-block">
               <span className="micro-label">WHY SELECTED</span>
               <p>{view.selectedExplanation}</p>
+              {live&&<p className="sheet-footnote">{view.observationsList.join(' · ')}</p>}
             </div>
 
             <div className="trace-copy-block">
@@ -1202,7 +1214,7 @@ export function MissionConsole({
   // VIEW 2: HEALTH INVESTIGATION (EVIDENCE & NEXT-CHECK NAVIGATION)
   // ---------------------------------------------------------------------------
   return (
-    <div className="mission-console mars-configurator-screen">
+    <div className="mission-console mars-configurator-screen" data-testid={live?'engine-status':undefined} data-status={view.status} aria-label={live?'Live investigation result':undefined}>
       <div className="mars-top-header">
         <button
           type="button"
@@ -1234,6 +1246,7 @@ export function MissionConsole({
               <button
                 key={l}
                 role="switch"
+                disabled={live && i===1}
                 aria-checked={flags[i]}
                 aria-label={l}
                 onClick={() => toggleFlag(i)}
@@ -1262,14 +1275,14 @@ export function MissionConsole({
       <div className="vital-history-scrubber-bar">
         <div className="gesture-360-overlay">
           <div className="wide-planetary-label">
-            I n s p e c t &nbsp; 7 - D a y &nbsp; V i t a l &nbsp; &amp; &nbsp; R a d i a t i o n &nbsp; H i s t o r y
+            {live?'Inspect Saved Health History':<>I n s p e c t &nbsp; 7 - D a y &nbsp; V i t a l &nbsp; &amp; &nbsp; R a d i a t i o n &nbsp; H i s t o r y</>}
           </div>
           <div className="diamond-scrub-control">
             <span className="scrub-line" />
             <input
               type="range"
               min={0}
-              max={history.length - 1}
+              max={Math.max(0,history.length - 1)}
               value={dayIndex}
               onChange={(e) => setDayIndex(Number(e.target.value))}
               aria-label="Scrub 7-day vital and radiation history"
@@ -1281,7 +1294,7 @@ export function MissionConsole({
             <span className="scrub-line" />
           </div>
           <span className="scrub-angle-readout">
-            {activeHistoryDay.day.toUpperCase()} · HR {dayHr ?? 'UNKNOWN'} BPM ·
+            {activeHistoryDay.day?.toUpperCase()??'UNKNOWN'} · HR {dayHr ?? 'UNKNOWN'} BPM ·
             SLEEP {daySleep ?? 'UNKNOWN'} HRS · RAD {dayRad ?? 'UNKNOWN'} mSv/d ·
             μG {dayCounter ?? 'UNKNOWN'} MIN
           </span>
@@ -1329,7 +1342,7 @@ export function MissionConsole({
               >
                 <div className="stage-card-head">
                   <span>01 · KNOWN OBSERVATIONS</span>
-                  <span>RECORDED</span>
+                  <span>{live?'RECORDED + ILLUSTRATIVE':'RECORDED'}</span>
                 </div>
                 <button
                   type="button"
@@ -1341,10 +1354,10 @@ export function MissionConsole({
                 >
                   <span>
                     <strong>
-                      Vitals, radiation dosimetry &amp; microgravity load
+                      {live?'Recorded health observations':'Vitals, radiation dosimetry & microgravity load'}
                     </strong>
                     <small>
-                      HR {crew.hr ?? 'Unknown'} · Sleep {crew.sleep ?? 'Unknown'}{' '}
+                      {live?view.observationsList.join(' · ')||'No observations returned.':<>HR {crew.hr ?? 'Unknown'} · Sleep {crew.sleep ?? 'Unknown'}{' '}
                       · Rad{' '}
                       {crew.radiationDailyMsv !== null
                         ? `${crew.radiationDailyMsv} mSv/d`
@@ -1352,7 +1365,7 @@ export function MissionConsole({
                       · ARED{' '}
                       {crew.countermeasureMin !== null
                         ? `${crew.countermeasureMin}m`
-                        : 'Unknown'}
+                        : 'Unknown'}</>}
                     </small>
                   </span>
                   <ArrowUpRight size={16} />
@@ -1375,10 +1388,9 @@ export function MissionConsole({
                   aria-pressed={selected === 'bp'}
                 >
                   <span>
-                    <strong>Blood pressure &amp; microgravity ocular check</strong>
+                    <strong>{live?'Missing recorded measurements':'Blood pressure & microgravity ocular check'}</strong>
                     <small className={!bp || !crew.ocularCheck ? 'unknown-val' : ''}>
-                      BP: {bp ? `${bp} mmHg` : 'Unknown'} · Ocular:{' '}
-                      {crew.ocularCheck ?? 'Unknown'}
+                      {live?view.missingData.join(', ')||'No missing measurements returned.':<>BP: {bp ? `${bp} mmHg` : 'Unknown'} · Ocular: {crew.ocularCheck ?? 'Unknown'}</>}
                     </small>
                   </span>
                   <ArrowUpRight size={16} />
@@ -1393,11 +1405,11 @@ export function MissionConsole({
                   aria-pressed={selected === 'resources'}
                 >
                   <span>
-                    {monitor
+                    {live?view.resourceConstraintsList.join(' · ')||'No resource constraints returned.':<>{monitor
                       ? 'BP monitor available'
                       : 'Blocked: BP monitor unavailable'}{' '}
                     · Ultrasound:{' '}
-                    {ultrasoundAvailable ? 'Available' : 'Unavailable'}
+                    {ultrasoundAvailable ? 'Available' : 'Unavailable'}</>}
                   </span>
                   <ArrowUpRight size={15} />
                 </button>
@@ -1430,9 +1442,7 @@ export function MissionConsole({
                     <strong>{view.nextCheckTitle}</strong>
                     <small>
                       Status: {view.status} ·{' '}
-                      {view.status === 'escalate'
-                        ? 'Manual emergency override'
-                        : 'Medical officer review required'}
+                      {live?`Medical-officer review: ${view.reviewLabel}`:view.status === 'escalate'?'Manual emergency override':'Medical officer review required'}
                     </small>
                   </span>
                   <ArrowUpRight size={16} />
@@ -1478,8 +1488,9 @@ export function MissionConsole({
               <p>
                 {view.nextCheckEquipment.length > 0
                   ? view.nextCheckEquipment.join(', ')
-                  : 'None (next_check: null)'}
+                  : view.hasNextCheck?'None required':'None (next_check: null)'}
               </p>
+              {live&&<p className="sheet-footnote">Safety flags: {view.safetyFlags.join(' · ')||'None returned'}</p>}
             </div>
           </aside>
         </div>

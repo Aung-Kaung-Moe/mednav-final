@@ -10,12 +10,12 @@ export type Crew = {
   /* Space Radiation & Microgravity Measurements (Synthetic Demo Data) */
   radiationDailyMsv: number | null;
   radiationCumulativeMsv: number | null;
-  radiationBaselineMsv: number;
+  radiationBaselineMsv: number | null;
   countermeasureMin: number | null;
-  countermeasureTargetMin: number;
+  countermeasureTargetMin: number | null;
   ocularCheck: string | null;
   bodyMassKg: number | null;
-  baselineMassKg: number;
+  baselineMassKg: number | null;
 };
 
 export type Equipment = {
