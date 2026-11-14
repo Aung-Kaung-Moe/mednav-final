@@ -35,6 +35,12 @@ export interface InvestigationRequestPayload {
   dataset_type: 'synthetic';
 }
 
+export interface InvestigationEvaluateRequest {
+  check_in_id: string;
+  communication_status: 'online' | 'offline';
+  emergency_override: boolean;
+}
+
 export interface ScenarioResponse {
   id?: string;
   status: InvestigationStatus;
