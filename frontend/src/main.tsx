@@ -1,19 +1,539 @@
-import {MissionConsole} from './components/MissionConsole';
-import {Panel,Badge} from './components/ui';
-import React,{useState} from 'react';
-import {createRoot} from 'react-dom/client';
-import {Activity,LayoutDashboard,ClipboardPlus,ScanLine,FlaskConical,Package,FileText,ArrowUpRight,ArrowRight,WifiOff,Orbit,ChevronRight,Check,Heart,Moon,Menu,X} from 'lucide-react';
-import {crews,equipment,symptomOptions,type Crew} from './data/fixtures';
+import React, { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import {
+  ArrowUpRight,
+  Check,
+  Menu,
+  X,
+  RotateCcw,
+} from 'lucide-react';
+import { MissionConsole } from './components/MissionConsole';
+import { VoiceCheckIn } from './components/VoiceCheckIn';
+import { Panel, Badge } from './components/ui';
+import { crews, equipment, symptomOptions, type Crew } from './data/fixtures';
 import './styles.css';
-const pages=['Mission Overview','Health Check-In','Investigation','Mission What-If Lab','Medical Inventory','Reports'];
-const icons=[LayoutDashboard,ClipboardPlus,ScanLine,FlaskConical,Package,FileText];
-const value=(v:number|string|null,unit='')=>v===null?'Unknown':`${v}${unit}`;
-function App(){const [page,setPage]=useState(0),[crewId,setCrewId]=useState('Crew A'),[profiles,setProfiles]=useState(crews),[inventory,setInventory]=useState(equipment),[mobile,setMobile]=useState(false),[activity,setActivity]=useState<string[]>([]),[search,setSearch]=useState(''),[category,setCategory]=useState('All'),[flags,setFlags]=useState([false,false,false,false]);const crew=profiles.find(c=>c.id===crewId)!;const go=(p:number)=>{setPage(p);setMobile(false)};
-return <div className={`app ${[0,2,3,5].includes(page)?"console-mode":""}`}><a href="#main" className="skip">Skip to content</a><aside className={mobile?'open':''}><a className="brand" href="#" onClick={()=>go(0)}><span className="brand-icon"><Activity/></span>MEDNAV</a><div className="brand-sub">Crew health</div><div className="nav-label">Workspace</div><nav>{pages.map((p,i)=>{const Icon=icons[i];return <button key={p} className={page===i?'active':''} onClick={()=>go(i)} aria-current={page===i?'page':undefined}><Icon size={18}/>{p}{page===i&&<ChevronRight size={14}/>}</button>})}</nav><div className="sidebar-bottom"><Orbit size={32}/><strong>MARS TRANSIT</strong><span>Expedition 026 / Fictional mission</span><div className="progress"><i/></div><small>DAY 180 <span>OF 240</span></small><p>Earth connection unavailable.<br/>Your session stays on this device.</p></div></aside><div className="workspace"><header><button className="mobile-toggle" aria-label="Toggle navigation" onClick={()=>setMobile(!mobile)}>{mobile?<X/>:<Menu/>}</button><span>Mars Transit <ChevronRight size={14}/> <b>{pages[page]}</b></span><div><Badge tone="amber"><WifiOff size={12}/> {flags[2]?'EARTH LINK: ONLINE (DEMO)':'EARTH LINK: OFFLINE'}</Badge><span className="header-day">Day 180</span></div></header><main id="main"><div className="page-top"><div><div className="eyebrow">CREW HEALTH / DAY 180</div><h1>{['Health overview','New check-in','Review observations','What-if lab','Medical inventory','Incident report'][page]}</h1><p className="subtitle">{['Your latest observations and recent health history.','Add symptoms and measurements, then review before saving.','See what is known, what is missing, and an example next step.','Change a condition to compare example workflows.','Find equipment and update its availability.','Review the record before a future ground handoff.'][page]}</p></div><label className="crew-select">ACTIVE CREW<select value={crewId} onChange={e=>{setCrewId(e.target.value);setFlags(f=>[f[0],profiles.find(c=>c.id===e.target.value)!.bp!==null,f[2],f[3]])}}>{profiles.map(c=><option key={c.id}>{c.id}</option>)}</select></label></div><div className="demo-bar"><span><i/> SYNTHETIC DEMO DATA</span><span>Fictional records. For demonstration only.</span></div>
-{[0,2,3,5].includes(page)&&<MissionConsole key={page} crew={crew} inventory={inventory} flags={flags} setFlags={f=>{setFlags(f);setInventory(v=>v.map(e=>e.name==='Blood-pressure monitor'?{...e,available:f[0]}:e))}} page={page} go={go}/>}
-{page===1&&<CheckIn key={crew.id} crew={crew} save={c=>{setProfiles(p=>p.map(x=>x.id===c.id?c:x));setFlags(f=>[f[0],c.bp!==null,f[2],f[3]]);setActivity(a=>[`${c.id} · Check-in saved`,...a])}} investigate={()=>go(2)}/>}
-{page===4&&<Panel title="Onboard medical inventory"><div className="filters"><label>Search equipment<input placeholder="Search equipment…" value={search} onChange={e=>setSearch(e.target.value)}/></label><label>Category<select value={category} onChange={e=>setCategory(e.target.value)}>{['All','Monitoring','Documentation','Imaging','Supplies'].map(c=><option key={c}>{c}</option>)}</select></label><Badge>{inventory.filter(e=>e.available).length} / {inventory.length} AVAILABLE</Badge></div><div className="inventory-grid">{inventory.filter(e=>e.name.toLowerCase().includes(search.toLowerCase())&&(category==='All'||e.category===category)).map(e=><article className="equipment" key={e.name}><Package size={24}/><Badge tone={e.available?'':'amber'}>{e.available?'Usable':'Unavailable'}</Badge><h3>{e.name}</h3><p>{e.category} · Quantity {e.quantity}</p><button className="secondary" onClick={()=>{setInventory(v=>v.map(x=>x.name===e.name?{...x,available:!x.available}:x));if(e.name==='Blood-pressure monitor')setFlags(f=>[!e.available,f[1],f[2],f[3]])}}>Mark {e.available?'unavailable':'available'}</button></article>)}</div>{!inventory.some(e=>e.name.toLowerCase().includes(search.toLowerCase())&&(category==='All'||e.category===category))&&<p>No equipment matches these filters.</p>}<p className="muted">Changes are held in memory for this demonstration only.</p></Panel>}
-<footer><span><Activity size={13}/> MEDNAV · Astronaut Medical Navigation System</span><span>DEMONSTRATION BUILD / 2026</span></footer></main></div></div>}
-function Observation({crew}:{crew:Crew}){return <dl>{[['Heart rate',value(crew.hr,' bpm')],['Sleep',value(crew.sleep,' hours')],['Blood pressure',value(crew.bp,' mmHg')],['Reported symptoms',crew.symptoms.join(', ')||'None reported']].map(([k,v])=><div className="row" key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>}
-function CheckIn({crew,save,investigate}:{crew:Crew;save:(c:Crew)=>void;investigate:()=>void}){const [symptoms,setSymptoms]=useState(crew.symptoms),[hr,setHr]=useState(crew.hr?.toString()||''),[sleep,setSleep]=useState(crew.sleep?.toString()||''),[sys,setSys]=useState(crew.bp?.split(' / ')[0]||''),[dia,setDia]=useState(crew.bp?.split(' / ')[1]||''),[review,setReview]=useState(false),[saved,setSaved]=useState(false),[error,setError]=useState('');const draft={...crew,symptoms,hr:hr===''?null:Number(hr),sleep:sleep===''?null:Number(sleep),bp:sys&&dia?`${sys} / ${dia}`:null};return <div className="two-col"><Panel title={saved?'Check-in saved':review?'Review your observations':'New crew observation'}>{saved?<><p role="status"><Check/> Saved to local demo state for {crew.id}.</p><button className="primary" onClick={investigate}>Open investigation <ArrowRight size={16}/></button></>:review?<><Observation crew={draft}/><button className="secondary" onClick={()=>setReview(false)}>Edit observations</button> <button className="primary" onClick={()=>{save(draft);setSaved(true)}}>Save check-in</button></>:<form onSubmit={e=>{e.preventDefault();if(Boolean(sys)!==Boolean(dia)){setError('Enter both blood-pressure values or leave both blank.');return}setError('');setReview(true)}}><fieldset><legend>Reported symptoms</legend><div className="symptom-options">{symptomOptions.map(s=><label key={s}><input type="checkbox" checked={symptoms.includes(s)} onChange={()=>setSymptoms(v=>v.includes(s)?v.filter(x=>x!==s):[...v,s])}/>{s}</label>)}</div></fieldset><p className="muted">Leave unavailable measurements blank. They will be saved as Unknown.</p><div className="form-grid">{[['Heart rate (bpm)',hr,setHr],['Sleep duration (hours)',sleep,setSleep],['Systolic pressure (mmHg)',sys,setSys],['Diastolic pressure (mmHg)',dia,setDia]].map(([label,v,change],i)=><label key={label as string}>{label as string}<input type="number" min={i===1?0:0.01} max={i===1?24:undefined} step="any" value={v as string} placeholder="Unknown" onChange={e=>(change as (v:string)=>void)(e.target.value)}/><button type="button" className="unknown-option" aria-pressed={v===''} onClick={()=>{if(i>=2){setSys('');setDia('')}else (change as (v:string)=>void)('')}}>Unknown</button></label>)}</div><p className="muted">Validation checks data format only. Sleep represents the last 24 hours.</p>{error&&<p role="alert" className="error">{error}</p>}<button className="primary" type="submit">Review check-in <ArrowRight size={16}/></button></form>}</Panel><Panel title="About this check-in"><div className="large-icon"><ClipboardPlus size={42}/></div><h3>It is okay to leave a field blank.</h3><p>Record only the observations available in this fictional scenario. Missing measurements are never interpreted as zero or normal.</p><div className="row"><span>Astronaut</span><strong>{crew.id}</strong></div><div className="row"><span>Storage</span><strong>Local session only</strong></div><p className="muted">Refreshing the page resets the prototype. Saving a check-in does not run an investigation or infer a medical condition.</p></Panel></div>}
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+
+const navItems = [
+  { label: 'Overview', page: 0 },
+  { label: 'Health Check-In', page: 1 },
+  { label: 'Investigation', page: 2 },
+  { label: 'What-If Lab', page: 3 },
+  { label: 'Medical Inventory', page: 4 },
+];
+
+const value = (v: number | string | null, unit = '') =>
+  v === null ? 'Unknown' : `${v}${unit}`;
+
+function App() {
+  const [page, setPage] = useState(0);
+  const [crewId, setCrewId] = useState('Crew A');
+  const [profiles, setProfiles] = useState(crews);
+  const [inventory, setInventory] = useState(equipment);
+  const [mobile, setMobile] = useState(false);
+  const [, setActivity] = useState<string[]>([]);
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('All');
+  const [flags, setFlags] = useState([false, false, false, false]);
+
+  const crew = profiles.find((c) => c.id === crewId)!;
+
+  const go = (p: number) => {
+    setPage(p);
+    setMobile(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectCrew = (nextId: string) => {
+    setCrewId(nextId);
+    const nextCrew = profiles.find((c) => c.id === nextId)!;
+    setFlags((f) => [f[0], nextCrew.bp !== null, f[2], f[3]]);
+  };
+
+  const isConsolePage = [0, 2, 3, 5].includes(page);
+
+  return (
+    <div className="app">
+      <a href="#main" className="skip">
+        Skip to content
+      </a>
+
+      {/* GLOBAL TOP NAVIGATION BAR */}
+      <header className="orbital-top-nav">
+        <button
+          className="mobile-toggle"
+          aria-label="Toggle navigation"
+          onClick={() => setMobile(!mobile)}
+        >
+          {mobile ? <X size={20} /> : <Menu size={20} />}
+        </button>
+
+        <nav
+          className={`top-nav-links ${mobile ? 'open' : ''}`}
+          aria-label="Main navigation"
+        >
+          {navItems.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className={`top-nav-link ${page === item.page ? 'active' : ''}`}
+              onClick={() => go(item.page)}
+              aria-current={page === item.page ? 'page' : undefined}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="top-nav-right">
+          <label className="crew-select-inline">
+            <span>CREW</span>
+            <select
+              value={crewId}
+              onChange={(e) => handleSelectCrew(e.target.value)}
+            >
+              {profiles.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.id}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className={`nav-outlined-pill ${page === 5 ? 'active' : ''}`}
+            onClick={() => go(5)}
+          >
+            Incident Report
+          </button>
+        </div>
+      </header>
+
+      <main id="main">
+        {isConsolePage && (
+          <MissionConsole
+            key={page}
+            crew={crew}
+            profiles={profiles}
+            onSelectCrew={handleSelectCrew}
+            inventory={inventory}
+            flags={flags}
+            setFlags={(f) => {
+              setFlags(f);
+              setInventory((v) =>
+                v.map((e) =>
+                  e.name === 'Blood-pressure monitor'
+                    ? { ...e, available: f[0] }
+                    : e
+                )
+              );
+            }}
+            page={page}
+            go={go}
+          />
+        )}
+
+        {page === 1 && (
+          <CheckIn
+            key={crew.id}
+            crew={crew}
+            save={(c) => {
+              setProfiles((p) => p.map((x) => (x.id === c.id ? c : x)));
+              setFlags((f) => [f[0], c.bp !== null, f[2], f[3]]);
+              setActivity((a) => [`${c.id} · Check-in saved`, ...a]);
+            }}
+            investigate={() => go(2)}
+          />
+        )}
+
+        {page === 4 && (
+          <div className="space-subpage">
+            <div className="asymmetric-workspace-grid">
+              <section className="left-telemetry-column">
+                <div className="wide-planetary-label left-aligned">
+                  M E D I C A L &nbsp; I N V E N T O R Y &nbsp; · &nbsp; D A Y &nbsp; 1 8 0
+                </div>
+                <h1 className="section-sans-headline">
+                  Onboard Medical Equipment
+                </h1>
+                <p className="telemetry-summary-copy">
+                  Verify and toggle usable status for onboard medical devices and
+                  consumables. Unavailable equipment is automatically excluded
+                  from recommended next checks.
+                </p>
+
+                <div className="inventory-toolbar">
+                  <div
+                    className="preset-hairline-row"
+                    role="group"
+                    aria-label="Filter by category"
+                  >
+                    {[
+                      'All',
+                      'Monitoring',
+                      'Documentation',
+                      'Imaging',
+                      'Supplies',
+                    ].map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`hairline-pill-btn ${
+                          category === c ? 'active' : ''
+                        }`}
+                        onClick={() => setCategory(c)}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="filters">
+                    <label>
+                      Search equipment
+                      <input
+                        placeholder="Filter by equipment name…"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                    </label>
+                    <Badge>
+                      {inventory.filter((e) => e.available).length} /{' '}
+                      {inventory.length} USABLE
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="hairline-telemetry-list">
+                  {inventory
+                    .filter(
+                      (e) =>
+                        e.name.toLowerCase().includes(search.toLowerCase()) &&
+                        (category === 'All' || e.category === category)
+                    )
+                    .map((e) => (
+                      <article
+                        className="equipment-hairline-row"
+                        key={e.name}
+                      >
+                        <div className="equip-row-left">
+                          <strong>{e.name}</strong>
+                          <span>
+                            {e.category} · Quantity {e.quantity} ·{' '}
+                            <em className={e.available ? 'ok-txt' : 'unknown-val'}>
+                              {e.available ? 'Usable' : 'Unavailable'}
+                            </em>
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="hairline-pill-btn"
+                          onClick={() => {
+                            setInventory((v) =>
+                              v.map((x) =>
+                                x.name === e.name
+                                  ? { ...x, available: !x.available }
+                                  : x
+                              )
+                            );
+                            if (e.name === 'Blood-pressure monitor') {
+                              setFlags((f) => [!e.available, f[1], f[2], f[3]]);
+                            }
+                          }}
+                        >
+                          Mark {e.available ? 'Unavailable' : 'Usable'}
+                        </button>
+                      </article>
+                    ))}
+                </div>
+              </section>
+
+              <aside className="right-frosted-sheet">
+                <div className="wide-planetary-label left-aligned">
+                  E Q U I P M E N T &nbsp; R E A D I N E S S
+                </div>
+                <dl className="hairline-telemetry-list compact-list">
+                  <div className="telemetry-kv-row compact">
+                    <dt>Tracked Medical Items:</dt>
+                    <dd>{inventory.length} Items</dd>
+                  </div>
+                  <div className="telemetry-kv-row compact">
+                    <dt>Currently Usable:</dt>
+                    <dd>
+                      {inventory.filter((e) => e.available).length} Available
+                    </dd>
+                  </div>
+                  <div className="telemetry-kv-row compact">
+                    <dt>Blood-Pressure Monitor:</dt>
+                    <dd className={!flags[0] ? 'unknown-val' : ''}>
+                      {flags[0] ? 'Available' : 'Unavailable'}
+                    </dd>
+                  </div>
+                </dl>
+              </aside>
+            </div>
+          </div>
+        )}
+
+        <footer>
+          <span>MEDNAV · ASTRONAUT HEALTH MONITORING</span>
+          <span>SYNTHETIC DATA · OFFLINE MODE</span>
+        </footer>
+      </main>
+    </div>
+  );
+}
+
+function Observation({ crew }: { crew: Crew }) {
+  return (
+    <dl className="hairline-telemetry-list">
+      {[
+        ['Heart Rate:', value(crew.hr, ' bpm')],
+        ['Sleep Duration:', value(crew.sleep, ' hours')],
+        ['Blood Pressure:', value(crew.bp, ' mmHg')],
+        ['Reported Symptoms:', crew.symptoms.join(', ') || 'None reported'],
+      ].map(([k, v]) => (
+        <div className="telemetry-kv-row" key={k}>
+          <dt>{k}</dt>
+          <dd className={v === 'Unknown' ? 'unknown-val' : ''}>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function CheckIn({
+  crew,
+  save,
+  investigate,
+}: {
+  crew: Crew;
+  save: (c: Crew) => void;
+  investigate: () => void;
+}) {
+  const [symptoms, setSymptoms] = useState(crew.symptoms);
+  const [hr, setHr] = useState(crew.hr?.toString() || '');
+  const [sleep, setSleep] = useState(crew.sleep?.toString() || '');
+  const [sys, setSys] = useState(crew.bp?.split(' / ')[0] || '');
+  const [dia, setDia] = useState(crew.bp?.split(' / ')[1] || '');
+  const [review, setReview] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  const draft: Crew = {
+    ...crew,
+    symptoms,
+    hr: hr === '' ? null : Number(hr),
+    sleep: sleep === '' ? null : Number(sleep),
+    bp: sys && dia ? `${sys} / ${dia}` : null,
+  };
+
+  return (
+    <div className="space-subpage">
+      <div className="asymmetric-workspace-grid">
+        <section className="left-telemetry-column">
+          <div className="wide-planetary-label left-aligned">
+            H E A L T H &nbsp; C H E C K - I N &nbsp; · &nbsp; {crew.id.toUpperCase()}
+          </div>
+          <h1 className="section-sans-headline">
+            {saved
+              ? 'Health Check-In Saved'
+              : review
+              ? 'Review Recorded Observations'
+              : `Health Check-In for ${crew.id}`}
+          </h1>
+
+          {saved ? (
+            <div className="checkin-saved-box">
+              <p role="status" className="status-success">
+                <Check size={18} /> Saved to local health log for {crew.id}.
+              </p>
+              <button className="ghost-rect-cta" onClick={investigate}>
+                <span>Open Investigation</span>
+                <ArrowUpRight size={18} />
+              </button>
+            </div>
+          ) : review ? (
+            <div>
+              <Observation crew={draft} />
+              <div className="review-actions">
+                <button
+                  className="hairline-pill-btn"
+                  onClick={() => setReview(false)}
+                >
+                  Edit Observations
+                </button>
+                <button
+                  className="ghost-rect-cta"
+                  onClick={() => {
+                    save(draft);
+                    setSaved(true);
+                  }}
+                >
+                  <span>Save Check-In</span>
+                  <ArrowUpRight size={18} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (Boolean(sys) !== Boolean(dia)) {
+                  setError(
+                    'Enter both blood-pressure values or leave both Unknown.'
+                  );
+                  return;
+                }
+                setError('');
+                setReview(true);
+              }}
+            >
+              <VoiceCheckIn
+                onApply={(parsed) => {
+                  if (parsed.clearSymptoms) {
+                    setSymptoms([]);
+                  } else if (parsed.symptoms && parsed.symptoms.length > 0) {
+                    setSymptoms(parsed.symptoms);
+                  }
+                  if (parsed.hr !== undefined && parsed.hr !== null) {
+                    setHr(parsed.hr);
+                  }
+                  if (parsed.sleep !== undefined && parsed.sleep !== null) {
+                    setSleep(parsed.sleep);
+                  }
+                  if (parsed.sys !== undefined && parsed.sys !== null) {
+                    setSys(parsed.sys);
+                  }
+                  if (parsed.dia !== undefined && parsed.dia !== null) {
+                    setDia(parsed.dia);
+                  }
+                }}
+              />
+
+              <fieldset>
+                <div className="fieldset-header">
+                  <legend>Reported Symptoms</legend>
+                  {symptoms.length > 0 && (
+                    <button
+                      type="button"
+                      className="hairline-pill-btn"
+                      onClick={() => setSymptoms([])}
+                    >
+                      <RotateCcw size={13} /> Clear
+                    </button>
+                  )}
+                </div>
+                <div className="symptom-options">
+                  {symptomOptions.map((s) => (
+                    <label key={s}>
+                      <input
+                        type="checkbox"
+                        checked={symptoms.includes(s)}
+                        onChange={() =>
+                          setSymptoms((v) =>
+                            v.includes(s)
+                              ? v.filter((x) => x !== s)
+                              : [...v, s]
+                          )
+                        }
+                      />
+                      <span>{s}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="vitals-section-head">
+                <strong>Vital Signs</strong>
+                <span>Unavailable measurements remain Unknown</span>
+              </div>
+
+              <div className="form-grid">
+                {[
+                  ['Heart rate (bpm)', hr, setHr],
+                  ['Sleep (hours)', sleep, setSleep],
+                  ['Systolic (mmHg)', sys, setSys],
+                  ['Diastolic (mmHg)', dia, setDia],
+                ].map(([label, v, change], i) => {
+                  const isUnknown = (v as string) === '';
+                  return (
+                    <div
+                      className={`field-card ${isUnknown ? 'is-unknown' : ''}`}
+                      key={label as string}
+                    >
+                      <div className="field-card-head">
+                        <label htmlFor={`field-${i}`}>{label as string}</label>
+                        <button
+                          type="button"
+                          className="unknown-option"
+                          aria-pressed={isUnknown}
+                          onClick={() => {
+                            if (i >= 2) {
+                              setSys('');
+                              setDia('');
+                            } else {
+                              (change as (v: string) => void)('');
+                            }
+                          }}
+                        >
+                          Unknown
+                        </button>
+                      </div>
+                      <input
+                        id={`field-${i}`}
+                        type="number"
+                        min={i === 1 ? 0 : 0.01}
+                        max={i === 1 ? 24 : undefined}
+                        step="any"
+                        value={v as string}
+                        placeholder="Unknown"
+                        onChange={(e) =>
+                          (change as (v: string) => void)(e.target.value)
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {error && (
+                <p role="alert" className="error">
+                  {error}
+                </p>
+              )}
+
+              <div className="form-submit-row">
+                <button className="ghost-rect-cta" type="submit">
+                  <span>Review Check-In</span>
+                  <ArrowUpRight size={18} />
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+
+        <aside className="right-frosted-sheet">
+          <div className="wide-planetary-label left-aligned">
+            C H E C K - I N &nbsp; S U M M A R Y
+          </div>
+          <h3>{crew.id} · {crew.role}</h3>
+          <Observation crew={draft} />
+          <div className="sheet-divider" />
+          <p className="sheet-footnote">
+            Missing measurements are preserved explicitly as <b>Unknown</b> and
+            never assumed normal.
+          </p>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+export { Panel };
+
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
