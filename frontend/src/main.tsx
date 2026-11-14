@@ -6,6 +6,14 @@ import {
   Menu,
   X,
   RotateCcw,
+  LayoutDashboard,
+  ClipboardList,
+  Microscope,
+  SlidersHorizontal,
+  Package,
+  FileText,
+  Info,
+  UserRound,
 } from 'lucide-react';
 import { MissionConsole } from './components/MissionConsole';
 import { VoiceCheckIn } from './components/VoiceCheckIn';
@@ -14,11 +22,12 @@ import { crews, equipment, symptomOptions, type Crew } from './data/fixtures';
 import './styles.css';
 
 const navItems = [
-  { label: 'Overview', page: 0 },
-  { label: 'Health Check-In', page: 1 },
-  { label: 'Investigation', page: 2 },
-  { label: 'What-If Lab', page: 3 },
-  { label: 'Medical Inventory', page: 4 },
+  { label: 'Dashboard', page: 0, icon: LayoutDashboard },
+  { label: 'Health Check-In', page: 1, icon: ClipboardList },
+  { label: 'Investigation', page: 2, icon: Microscope },
+  { label: 'What-If Lab', page: 3, icon: SlidersHorizontal },
+  { label: 'Medical Inventory', page: 4, icon: Package },
+  { label: 'Incident Report', page: 5, icon: FileText },
 ];
 
 const value = (v: number | string | null, unit = '') =>
@@ -52,64 +61,104 @@ function App() {
   const isConsolePage = [0, 2, 3, 5].includes(page);
 
   return (
-    <div className="app">
+    <div className="app-shell">
       <a href="#main" className="skip">
         Skip to content
       </a>
 
-      {/* GLOBAL TOP NAVIGATION BAR */}
-      <header className="orbital-top-nav">
-        <button
-          className="mobile-toggle"
-          aria-label="Toggle navigation"
-          onClick={() => setMobile(!mobile)}
-        >
-          {mobile ? <X size={20} /> : <Menu size={20} />}
-        </button>
+      {/* LEFT VERTICAL SIDEBAR SHELL (PORTED FROM FRONTEND2 IN ORBITAL VOID PALETTE) */}
+      <aside className={`sidebar ${mobile ? 'sidebar-open' : ''}`}>
+        <div className="side-identity">
+          <div className="logo-orbit" aria-hidden="true">
+            <span />
+            <i />
+          </div>
+          <div className="side-brand">
+            MEDNAV<sup>™</sup>
+          </div>
+          <div className="side-tagline">
+            ASTRONAUT HEALTH
+            <br />
+            MONITORING SYSTEM
+          </div>
+        </div>
 
-        <nav
-          className={`top-nav-links ${mobile ? 'open' : ''}`}
-          aria-label="Main navigation"
-        >
-          {navItems.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              className={`top-nav-link ${page === item.page ? 'active' : ''}`}
-              onClick={() => go(item.page)}
-              aria-current={page === item.page ? 'page' : undefined}
-            >
-              {item.label}
-            </button>
-          ))}
+        <nav className="sidebar-nav" aria-label="Main navigation">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.label}
+                type="button"
+                className={`nav-item ${page === item.page ? 'nav-current' : ''}`}
+                onClick={() => go(item.page)}
+                aria-current={page === item.page ? 'page' : undefined}
+              >
+                <Icon size={20} strokeWidth={1.8} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
-        <div className="top-nav-right">
-          <label className="crew-select-inline">
-            <span>CREW</span>
-            <select
-              value={crewId}
-              onChange={(e) => handleSelectCrew(e.target.value)}
-            >
-              {profiles.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.id}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="side-bottom">
+          <div className="program-logo">
+            <div className="nasa-ish">M</div>
+            <div>
+              <strong>MEDNAV</strong>
+              <small>
+                Space Health Program
+                <br />
+                Synthetic Offline Demo
+              </small>
+            </div>
+          </div>
+        </div>
+      </aside>
 
+      {/* MAIN AREA WITH TOPBAR & WORKSPACE */}
+      <div className="main-area">
+        <header className="topbar">
           <button
             type="button"
-            className={`nav-outlined-pill ${page === 5 ? 'active' : ''}`}
-            onClick={() => go(5)}
+            className="mobile-menu-btn"
+            aria-label="Toggle navigation"
+            onClick={() => setMobile(!mobile)}
           >
-            Incident Report
+            {mobile ? <X size={22} /> : <Menu size={22} />}
           </button>
-        </div>
-      </header>
 
-      <main id="main">
+          <div className="brand-divider" aria-hidden="true" />
+          <div className="main-brand">MEDNAV</div>
+          <div className="header-separator" aria-hidden="true" />
+          <div className="header-subtitle">Astronaut Health Monitoring</div>
+
+          <div className="topbar-right">
+            <label className="crew-select-inline">
+              <span>CREW</span>
+              <select
+                value={crewId}
+                onChange={(e) => handleSelectCrew(e.target.value)}
+              >
+                {profiles.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="prototype-label">
+              <Info size={15} /> Synthetic Telemetry · Non-Diagnostic
+            </div>
+
+            <div className="user-icon" aria-hidden="true">
+              <UserRound size={22} />
+            </div>
+          </div>
+        </header>
+
+        <main id="main">
         {isConsolePage && (
           <MissionConsole
             key={page}
@@ -279,7 +328,8 @@ function App() {
           <span>MEDNAV · ASTRONAUT HEALTH MONITORING</span>
           <span>SYNTHETIC DATA · OFFLINE MODE</span>
         </footer>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

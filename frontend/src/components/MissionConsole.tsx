@@ -310,71 +310,6 @@ export function MissionConsole({
 
     return (
       <div className="space-home">
-        {/* HERO SECTION */}
-        <section className="orbital-hero-section">
-          <div className="orbital-horizon-art" aria-hidden="true">
-            <img
-              src="/Bruce_McCandless_II_during_EVA_in_1984.jpg"
-              alt=""
-              className="hero-eva-photo"
-            />
-            <div className="hero-eva-vignette" />
-          </div>
-
-          <div className="hero-left-column">
-            <div className="wide-planetary-label left-aligned">
-              C R E W &nbsp; H E A L T H &nbsp; M O N I T O R &nbsp; · &nbsp; D A Y &nbsp; 1 8 0
-            </div>
-
-            <h1 className="editorial-serif-headline">
-              Clear Observations.
-              <br />
-              Missing-Data Awareness.
-              <br />
-              Resource-Safe Next Checks.
-            </h1>
-
-            <p className="hero-lead-subtitle">
-              {crew.id} ({crew.role}) · {knownVitalsCount}/3 vitals · Radiation{' '}
-              {crew.radiationDailyMsv !== null
-                ? `${crew.radiationDailyMsv} mSv/d`
-                : 'Unknown'}{' '}
-              · {view.nextCheckTitle}.
-            </p>
-
-            <div
-              className="crew-switcher-strip"
-              role="region"
-              aria-label="Select active crew member"
-            >
-              {profiles.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={`hairline-pill-btn ${
-                    c.id === crew.id ? 'active' : ''
-                  }`}
-                  onClick={() => onSelectCrew(c.id)}
-                  aria-pressed={c.id === crew.id}
-                >
-                  {c.id}
-                </button>
-              ))}
-            </div>
-
-            <div className="hero-cta-group">
-              <button
-                type="button"
-                className="ghost-rect-cta"
-                onClick={() => go(2)}
-              >
-                <span>Open Health Investigation</span>
-                <ArrowUpRight size={18} />
-              </button>
-            </div>
-          </div>
-        </section>
-
         {/* OVERVIEW 3-COLUMN INTERACTIVE 3D COMMAND CENTER */}
         <section
           className="overview-dashboard-section"
@@ -385,9 +320,9 @@ export function MissionConsole({
               <div className="wide-planetary-label left-aligned">
                 L I V E &nbsp; H E A L T H &nbsp; D A S H B O A R D &nbsp; · &nbsp; 3 D &nbsp; T E L E M E T R Y
               </div>
-              <h2 className="section-sans-headline">
+              <h1 className="section-sans-headline">
                 {crew.id} Status Overview · {crew.role}
-              </h2>
+              </h1>
             </div>
 
             <div className="dashboard-header-actions">
@@ -416,8 +351,31 @@ export function MissionConsole({
           </div>
 
           <div className="mednav-3d-dashboard-grid">
-            {/* LEFT STACK: CREW PROFILE, VITAL WAVEFORMS, RADIATION/μG & SYMPTOMS */}
+            {/* LEFT STACK: CREW PICKER, PROFILE, VITAL WAVEFORMS, RADIATION/μG & SYMPTOMS */}
             <div className="left-stack">
+              <div
+                className="crew-picker"
+                role="region"
+                aria-label="Select active crew member"
+              >
+                <div className="crew-picker-label">
+                  <UserRound size={18} /> Astronaut
+                </div>
+                <div className="crew-tabs">
+                  {profiles.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className={`crew-tab ${c.id === crew.id ? 'active' : ''}`}
+                      onClick={() => onSelectCrew(c.id)}
+                      aria-pressed={c.id === crew.id}
+                    >
+                      {c.id}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <article className="command-card crew-card">
                 <div className="profile-pic">
                   <AstronautBadge />

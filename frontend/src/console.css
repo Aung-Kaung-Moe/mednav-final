@@ -90,7 +90,63 @@
    ========================================================================== */
 
 .overview-dashboard-section {
-  padding: 52px 0 24px;
+  padding: 12px 0 24px;
+}
+
+.crew-picker {
+  background: #0b0c10;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  padding: 7px 10px;
+  gap: 10px;
+  min-height: 48px;
+}
+
+.crew-picker-label {
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.crew-picker-label svg {
+  color: var(--cobalt-glow);
+}
+
+.crew-tabs {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+}
+
+.crew-tab {
+  min-width: 0;
+  flex: 1;
+  height: 32px;
+  border-radius: 7px;
+  border: 1px solid var(--hairline);
+  background: #0a0a0e;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.crew-tab:hover {
+  border-color: var(--hairline-strong);
+  color: var(--text-primary);
+}
+
+.crew-tab.active {
+  border: 1px solid var(--cobalt-glow);
+  background: rgba(91, 155, 213, 0.2);
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .dashboard-header-bar {
