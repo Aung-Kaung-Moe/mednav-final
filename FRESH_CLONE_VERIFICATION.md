@@ -44,3 +44,13 @@ Known P2: Incident Report overflow around 390 px. Radiation/microgravity remain 
 ## Local evidence
 
 The temporary checkout contains `.demo-runtime/backend-junit.xml`, `engine-junit.xml`, `core-browser-results.json`, `full-browser-results.json`, installation logs and `qa-evidence/` screenshots. The original checkout's `.demo-runtime/fresh-clone/` records installation/launcher evidence and its original database hash. These generated artifacts are deliberately excluded from Git and are not setup dependencies. The original application database is not used by the clean tests.
+
+## Literal committed-clone confirmation
+
+After committing the reviewed source as `3cdab708dfb55095324ee42d8b4401d0f383015f`, a second `git clone --no-local --single-branch --branch integration/first-live-demo` was created in another empty temporary directory, with no file overlay. Fresh venv/pip and npm installation were repeated without copied caches, databases or models. Both servers ran from this literal clone; runtime source matched HEAD.
+
+The initial PyPI install and first retry suffered connection resets. A new download with pip 24.3.1 `--use-deprecated=legacy-certs --no-cache-dir --index-url https://pypi.org/simple` completed successfully with certificate verification intact. `pip check` reported no broken requirements. npm installation, TypeScript/Vite build and all 8 unit tests passed. Backend tests: **121 passed, 0 failed, 0 skipped**. Standalone engine: **35 passed, 0 failed, 0 skipped**.
+
+Full browser run: **17 passed, 1 failed, 0 skipped**. All **15 core cases passed**. The failing case was `voice.spec.ts:14`, the known speech phrase assertion: actual transcription was `are greedy be a sleep for hours i have a headache heartbreaking`, missing expected `heart rate`. Real audio-format/recorder transcription and voice-service failure handling both passed. This reproduces the documented recognition defect; it must not be hidden by the earlier 18/18 candidate run. Voice accuracy is not certified and this failure does not block publication of the verified manual-entry core.
+
+No critical core-workflow failure was observed. Build warnings remain for the large frontend bundle; a backend dependency emits a deprecation warning. These were not changed to mask the results. This follow-up documentation does not change the source tested at 3cdab70.

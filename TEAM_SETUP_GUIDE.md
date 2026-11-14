@@ -123,6 +123,7 @@ The generated ignored WAV is real audio test input, not a mocked transcript. Aut
 - **Port occupied / wrong checkout:** stop that checkout using its launcher or original terminal. Do not start duplicate servers or assume a reused server belongs to this clone.
 - **Scripts disabled:** use the shown per-process `-ExecutionPolicy Bypass` command; no persistent system-policy change is required.
 - **Python/import failure:** confirm `backend/.venv/Scripts/python.exe` exists and install requirements into it, not a global interpreter. Check `.demo-runtime/backend.stderr.log`.
+- **PyPI connection reset:** retry the installation on a stable connection. The second clean-clone run succeeded with pip 24.3.1 using `--use-deprecated=legacy-certs --no-cache-dir --index-url https://pypi.org/simple` on the same install command. This selects pip's verified certificate path; it does not disable TLS verification. Use this fallback only if your pip supports it; do not use `--trusted-host` or disable certificate checks.
 - **npm/Vite missing:** run `npm.cmd ci` from frontend/. Use Node 22/24; package-lock is tracked. Check `.demo-runtime/frontend.stderr.log`.
 - **Browser test cannot launch Edge:** install Edge or Playwright's msedge channel. No browser download is required when compatible Edge already exists.
 - **Missing voice model:** install requirements-voice into this clone's venv and restart its backend. `/api/v1/voice/status` reports availability. Do not treat a 503 as a medical result.
