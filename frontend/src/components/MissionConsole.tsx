@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ArrowUpRight,
   ArrowLeft,
@@ -10,10 +10,17 @@ import {
   Moon,
   Activity,
   ShieldAlert,
+  ShieldCheck,
   Package,
   Radiation,
   Dumbbell,
   Eye,
+  Download,
+  ScanLine,
+  Database,
+  Info,
+  UserRound,
+  ClipboardList,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -23,7 +30,17 @@ import {
 } from 'recharts';
 import { history, type Crew, type Equipment } from '../data/fixtures';
 import { getScenario } from '../data/scenarios';
-import { formatInvestigationView } from '../types/scenario';
+import {
+  formatInvestigationView,
+  type ScenarioResponse,
+} from '../types/scenario';
+import {
+  partInfo,
+  type AnatomyLayerMode,
+  type AnatomyModelStatus,
+  type AnatomySex,
+} from '../data/anatomy';
+import { BodyViewer } from './BodyViewer';
 import '../console.css';
 
 type Props = {
@@ -67,6 +84,122 @@ const evidence = {
   },
 };
 
+function waveformPoints(base = 0, pulse = false) {
+  const n = 64;
+  return Array.from({ length: n }, (_, i) => {
+    const x = (i / (n - 1)) * 180;
+    let y = 20 + Math.sin(i * 0.35 + base) * 2.5 + Math.sin(i * 0.09) * 1.5;
+    if (pulse) {
+      const phase = (i + base) % 22;
+      y += phase === 11 ? -15 : phase === 10 || phase === 12 ? 7 : 0;
+    }
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+}
+
+function MiniWave({
+  tone = 'cobalt',
+  pulse = false,
+  seed = 0,
+}: {
+  tone?: 'cobalt' | 'amber' | 'coral';
+  pulse?: boolean;
+  seed?: number;
+}) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={`miniwave wave-${tone}`}
+      viewBox="0 0 180 42"
+      preserveAspectRatio="none"
+    >
+      <line x1="0" y1="20" x2="180" y2="20" stroke="currentColor" opacity="0.14" />
+      <polyline
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        points={waveformPoints(seed, pulse)}
+      />
+    </svg>
+  );
+}
+
+function SleepBars() {
+  const heights = [34, 48, 28, 60, 44, 38, 56, 72, 46, 64, 42, 54];
+  return (
+    <div className="sleep-bars" aria-label="Illustrative sleep trend">
+      {heights.map((h, i) => (
+        <i key={i} style={{ height: `${h}%`, opacity: 0.55 + (i % 3) * 0.16 }} />
+      ))}
+    </div>
+  );
+}
+
+function AstronautBadge() {
+  return (
+    <div className="astronaut-badge" aria-hidden="true">
+      <svg viewBox="0 0 100 100">
+        <defs>
+          <linearGradient id="mednav-helmet-g" x1="0" x2="1" y1="0" y2="1">
+            <stop stopColor="#5b9bd5" />
+            <stop offset="1" stopColor="#1e4d8c" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M25 47Q20 17 50 14Q80 17 75 47L83 81Q50 92 17 81Z"
+          fill="#e2e8f0"
+          opacity="0.95"
+        />
+        <path
+          d="M31 46Q25 24 50 24Q75 24 69 46Q65 65 50 66Q35 65 31 46"
+          fill="#0a0a0c"
+          stroke="url(#mednav-helmet-g)"
+          strokeWidth="4"
+        />
+        <path
+          d="M35 32Q47 23 59 30"
+          stroke="#5b9bd5"
+          strokeWidth="3.5"
+          fill="none"
+          opacity="0.65"
+        />
+        <path d="M24 74Q50 60 76 74L80 84Q50 94 20 84Z" fill="#3f4b5e" />
+        <circle cx="26" cy="74" r="4.5" fill="#f5a623" />
+        <circle cx="74" cy="74" r="4.5" fill="#5b9bd5" />
+      </svg>
+    </div>
+  );
+}
+
+function downloadJSON(
+  crew: Crew,
+  inventory: Equipment[],
+  response: ScenarioResponse | null
+) {
+  const sample = {
+    project: 'MEDNAV',
+    dataset_type: 'synthetic',
+    exported_at: new Date().toISOString(),
+    subject: crew,
+    inventory,
+    investigation_response: response,
+    note: 'All fields are synthetic demonstration values, not clinical data or diagnosis.',
+  };
+  const blob = new Blob([JSON.stringify(sample, null, 2)], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mednav-demo-${crew.id.toLowerCase().replace(/\s+/g, '-')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export function MissionConsole({
   crew,
   profiles,
@@ -81,6 +214,11 @@ export function MissionConsole({
   const [drawer, setDrawer] = useState(false);
   const [dayIndex, setDayIndex] = useState(history.length - 1);
   const [trendMode, setTrendMode] = useState<'hr' | 'rad' | 'ug'>('hr');
+  const [selectedPart, setSelectedPart] = useState('brain');
+  const [layerMode, setLayerMode] = useState<AnatomyLayerMode>('xray');
+  const [autoRotate, setAutoRotate] = useState(false);
+  const [sex, setSex] = useState<AnatomySex>('male');
+  const [modelStatus, setModelStatus] = useState<AnatomyModelStatus>('loading');
 
   // Purely render the engine/fixture response — no separate medical decision logic in the frontend.
   const response = getScenario(flags);
@@ -94,6 +232,16 @@ export function MissionConsole({
     inventory.find((e) => e.name === 'Personal radiation dosimeter')?.available ?? true;
   const ultrasoundAvailable =
     inventory.find((e) => e.name === 'Ultrasound unit')?.available ?? false;
+
+  const part = useMemo(
+    () => partInfo(selectedPart, crew, bp),
+    [crew, selectedPart, bp]
+  );
+
+  const focusPart = (partKey: string, preferredMode?: AnatomyLayerMode) => {
+    setSelectedPart(partKey);
+    if (preferredMode) setLayerMode(preferredMode);
+  };
 
   const missing = [
     crew.hr === null ? 'Heart rate' : null,
@@ -138,6 +286,27 @@ export function MissionConsole({
         : trendMode === 'rad'
         ? '#F5A623'
         : '#9D7BFF';
+
+    const recordedCount = [
+      crew.hr,
+      crew.sleep,
+      bp,
+      crew.radiationDailyMsv,
+      crew.radiationCumulativeMsv,
+      crew.countermeasureMin,
+      crew.ocularCheck,
+      crew.bodyMassKg,
+    ].filter((v) => v !== null).length;
+
+    const blockedBySensorCount =
+      (bp === null && !monitor ? 1 : 0) +
+      (crew.radiationDailyMsv === null && !dosimeterAvailable ? 1 : 0) +
+      (crew.ocularCheck === null && !ultrasoundAvailable ? 1 : 0);
+    const unknownOnlyCount = Math.max(0, 8 - recordedCount - blockedBySensorCount);
+
+    const recordedPct = Math.round((recordedCount / 8) * 100);
+    const unknownOnlyPct = Math.round((unknownOnlyCount / 8) * 100);
+    const blockedPct = Math.max(0, 100 - recordedPct - unknownOnlyPct);
 
     return (
       <div className="space-home">
@@ -206,7 +375,7 @@ export function MissionConsole({
           </div>
         </section>
 
-        {/* OVERVIEW HEALTH STATUS DASHBOARD (CARD-BASED PRESENTATION) */}
+        {/* OVERVIEW 3-COLUMN INTERACTIVE 3D COMMAND CENTER */}
         <section
           className="overview-dashboard-section"
           aria-label="Crew health status dashboard"
@@ -214,7 +383,7 @@ export function MissionConsole({
           <div className="dashboard-header-bar">
             <div>
               <div className="wide-planetary-label left-aligned">
-                L I V E &nbsp; H E A L T H &nbsp; D A S H B O A R D &nbsp; · &nbsp; S Y N T H E T I C &nbsp; D A T A
+                L I V E &nbsp; H E A L T H &nbsp; D A S H B O A R D &nbsp; · &nbsp; 3 D &nbsp; T E L E M E T R Y
               </div>
               <h2 className="section-sans-headline">
                 {crew.id} Status Overview · {crew.role}
@@ -236,375 +405,395 @@ export function MissionConsole({
               >
                 What-If Simulator
               </button>
+              <button
+                type="button"
+                className="hairline-pill-btn"
+                onClick={() => go(5)}
+              >
+                Incident Report
+              </button>
             </div>
           </div>
 
-          {/* ROW 1: 4 PRIMARY VITAL & SYMPTOM STATUS CARDS */}
-          <div className="dashboard-kpi-grid">
-            {/* Card 1: Heart Rate */}
-            <article className="status-kpi-card rail-reading" onClick={() => go(1)}>
-              <div className="kpi-card-top">
-                <span className="kpi-icon-badge">
-                  <HeartPulse size={18} />
+          <div className="mednav-3d-dashboard-grid">
+            {/* LEFT STACK: CREW PROFILE, VITAL WAVEFORMS, RADIATION/μG & SYMPTOMS */}
+            <div className="left-stack">
+              <article className="command-card crew-card">
+                <div className="profile-pic">
+                  <AstronautBadge />
+                </div>
+                <div className="profile-details">
+                  <h2>{crew.id}</h2>
+                  <div>
+                    Role: <span>{crew.role}</span>
+                  </div>
+                  <div>
+                    Mission: <span>Day 180 · Orbital Health</span>
+                  </div>
+                </div>
+                <span className={`kpi-status-pill ${view.statusTone}`}>
+                  {view.status === 'escalate' ? 'ESCALATE' : 'SYNTHETIC'}
                 </span>
-                <span
-                  className={`kpi-status-pill ${
-                    crew.hr === null ? 'amber' : 'ok'
-                  }`}
-                >
-                  {crew.hr === null ? 'UNKNOWN' : 'RECORDED'}
-                </span>
-              </div>
-              <div className="kpi-card-value">
-                <strong className={crew.hr === null ? 'unknown-val' : ''}>
-                  {crew.hr ?? 'Unknown'}
-                </strong>
-                {crew.hr !== null && <small>bpm</small>}
-              </div>
-              <span className="kpi-card-label">Heart Rate</span>
-              <div className="kpi-card-footer">
-                <span>Baseline: {crew.baseline} bpm</span>
-                <span>
-                  {crew.hr !== null
-                    ? `${crew.hr - crew.baseline >= 0 ? '+' : ''}${
-                        crew.hr - crew.baseline
-                      } bpm`
-                    : 'Not measured'}
-                </span>
-              </div>
-            </article>
+              </article>
 
-            {/* Card 2: Blood Pressure */}
-            <article className="status-kpi-card rail-reading" onClick={() => go(2)}>
-              <div className="kpi-card-top">
-                <span className="kpi-icon-badge">
-                  <Stethoscope size={18} />
-                </span>
-                <span className={`kpi-status-pill ${!bp ? 'amber' : 'ok'}`}>
-                  {bp ? 'RECORDED' : 'MISSING'}
-                </span>
-              </div>
-              <div className="kpi-card-value">
-                <strong className={!bp ? 'unknown-val' : ''}>
-                  {bp ?? 'Unknown'}
-                </strong>
-                {bp && <small>mmHg</small>}
-              </div>
-              <span className="kpi-card-label">Blood Pressure</span>
-              <div className="kpi-card-footer">
-                <span>Monitor: {monitor ? 'Available' : 'Unavailable'}</span>
-                <span>{bp ? 'Verified' : 'Never assumed normal'}</span>
-              </div>
-            </article>
+              <article className="command-card vitals-card">
+                <header className="command-card-header">
+                  <div className="command-card-title">
+                    <HeartPulse size={18} />
+                    <span>Vital Signs</span>
+                  </div>
+                  <span className="realtime-tag">
+                    <span className="tiny-dot ok" aria-hidden="true" />
+                    {knownVitalsCount}/3 Recorded
+                  </span>
+                </header>
 
-            {/* Card 3: Sleep Duration */}
-            <article className="status-kpi-card rail-reading" onClick={() => go(1)}>
-              <div className="kpi-card-top">
-                <span className="kpi-icon-badge">
-                  <Moon size={18} />
-                </span>
-                <span
-                  className={`kpi-status-pill ${
-                    crew.sleep === null ? 'amber' : 'ok'
-                  }`}
-                >
-                  {crew.sleep === null ? 'UNKNOWN' : 'RECORDED'}
-                </span>
-              </div>
-              <div className="kpi-card-value">
-                <strong className={crew.sleep === null ? 'unknown-val' : ''}>
-                  {crew.sleep ?? 'Unknown'}
-                </strong>
-                {crew.sleep !== null && <small>hrs</small>}
-              </div>
-              <span className="kpi-card-label">Sleep Duration</span>
-              <div className="kpi-card-footer">
-                <span>Baseline: {crew.sleepBaseline} hrs</span>
-                <span>
-                  {crew.sleep !== null
-                    ? `${crew.sleep - crew.sleepBaseline >= 0 ? '+' : ''}${(
-                        crew.sleep - crew.sleepBaseline
-                      ).toFixed(1)} hrs`
-                    : 'Not measured'}
-                </span>
-              </div>
-            </article>
+                <div className="vital-list">
+                  <button
+                    type="button"
+                    className="vital-row rail-reading"
+                    onClick={() => focusPart('heart', 'organs')}
+                  >
+                    <HeartPulse className="vital-icon coral-txt" size={22} />
+                    <div className="vital-copy">
+                      <small>Heart Rate</small>
+                      <strong className={crew.hr === null ? 'unknown-val' : ''}>
+                        {crew.hr ?? 'Unknown'}
+                        {crew.hr !== null && <sub> bpm</sub>}
+                      </strong>
+                      <em>Base {crew.baseline} bpm</em>
+                    </div>
+                    <MiniWave
+                      tone={crew.hr === null ? 'amber' : 'coral'}
+                      pulse={crew.hr !== null}
+                      seed={4}
+                    />
+                  </button>
 
-            {/* Card 4: Symptoms & Vital Completeness */}
-            <article className="status-kpi-card" onClick={() => go(1)}>
-              <div className="kpi-card-top">
-                <span className="kpi-icon-badge">
-                  <Activity size={18} />
-                </span>
-                <span
-                  className={`kpi-status-pill ${
-                    knownVitalsCount === 3 ? 'ok' : 'amber'
-                  }`}
-                >
-                  {knownVitalsCount}/3 VITALS
-                </span>
-              </div>
-              <div className="kpi-card-value symptom-val">
-                <strong>
-                  {crew.symptoms.length > 0
-                    ? crew.symptoms.join(', ')
-                    : 'No Symptoms'}
-                </strong>
-              </div>
-              <span className="kpi-card-label">Reported Symptoms</span>
-              <div className="kpi-card-footer">
-                <span>
-                  {missing.length > 0
-                    ? `${missing.length} parameter(s) unknown`
-                    : 'Complete record'}
-                </span>
-              </div>
-            </article>
-          </div>
+                  <button
+                    type="button"
+                    className="vital-row rail-reading"
+                    onClick={() => focusPart('heart', 'organs')}
+                  >
+                    <Stethoscope className="vital-icon ok-txt" size={22} />
+                    <div className="vital-copy">
+                      <small>Blood Pressure</small>
+                      <strong className={!bp ? 'unknown-val bp-number' : 'bp-number'}>
+                        {bp ?? 'Unknown'}
+                        {bp && <sub> mmHg</sub>}
+                      </strong>
+                      <em>Monitor: {monitor ? 'Available' : 'Unavailable'}</em>
+                    </div>
+                    <MiniWave tone={!bp ? 'amber' : 'cobalt'} seed={7} />
+                  </button>
 
-          {/* ROW 2: SPACE RADIATION & MICROGRAVITY EFFECTS CARDS */}
-          <div className="roster-section-head">
-            <span className="wide-planetary-label left-aligned">
-              S P A C E &nbsp; R A D I A T I O N &nbsp; &amp; &nbsp; M I C R O G R A V I T Y &nbsp; E F F E C T S &nbsp; ( S Y N T H E T I C )
-            </span>
-          </div>
+                  <button
+                    type="button"
+                    className="vital-row rail-reading"
+                    onClick={() => focusPart('brain', 'organs')}
+                  >
+                    <Moon className="vital-icon ok-txt" size={22} />
+                    <div className="vital-copy">
+                      <small>Sleep Duration</small>
+                      <strong className={crew.sleep === null ? 'unknown-val' : ''}>
+                        {crew.sleep ?? 'Unknown'}
+                        {crew.sleep !== null && <sub> h</sub>}
+                      </strong>
+                      <em>Base {crew.sleepBaseline} h</em>
+                    </div>
+                    <SleepBars />
+                  </button>
+                </div>
+              </article>
 
-          <div className="space-hazards-grid">
-            {/* Hazard Card 1: Space Radiation Dosimetry */}
-            <article className="status-kpi-card" onClick={() => go(1)}>
-              <div className="kpi-card-top">
-                <span className="kpi-icon-badge amber-icon">
-                  <Radiation size={18} />
-                </span>
-                <span
-                  className={`kpi-status-pill ${
-                    crew.radiationDailyMsv === null
-                      ? 'amber'
-                      : crew.radiationDailyMsv > crew.radiationBaselineMsv + 0.08
-                      ? 'amber'
-                      : 'ok'
-                  }`}
-                >
-                  {crew.radiationDailyMsv === null
-                    ? 'UNKNOWN'
-                    : crew.radiationDailyMsv > crew.radiationBaselineMsv + 0.08
-                    ? 'ELEVATED GCR/SPE'
-                    : 'RECORDED'}
-                </span>
+              <article className="command-card hazards-card">
+                <header className="command-card-header">
+                  <div className="command-card-title">
+                    <Radiation size={18} />
+                    <span>Space Radiation &amp; μG</span>
+                  </div>
+                  <span className="realtime-tag">Synthetic</span>
+                </header>
+
+                <div className="hazard-compact-list">
+                  <button
+                    type="button"
+                    className="hazard-row-btn"
+                    onClick={() => focusPart('skin', 'surface')}
+                  >
+                    <Radiation size={17} className="amber-text" />
+                    <div className="hazard-row-copy">
+                      <small>Space Radiation Dosimetry</small>
+                      <strong
+                        className={
+                          crew.radiationDailyMsv === null ? 'unknown-val' : ''
+                        }
+                      >
+                        {crew.radiationDailyMsv !== null
+                          ? `${crew.radiationDailyMsv} mSv/d`
+                          : 'Unknown'}
+                      </strong>
+                    </div>
+                    <span className="hazard-row-meta">
+                      180d:{' '}
+                      {crew.radiationCumulativeMsv !== null
+                        ? `${crew.radiationCumulativeMsv} mSv`
+                        : 'Unknown'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="hazard-row-btn"
+                    onClick={() => focusPart('femur_l', 'skeleton')}
+                  >
+                    <Dumbbell size={17} className="ok-txt" />
+                    <div className="hazard-row-copy">
+                      <small>μG ARED Exercise &amp; Mass</small>
+                      <strong
+                        className={
+                          crew.countermeasureMin === null ? 'unknown-val' : ''
+                        }
+                      >
+                        {crew.countermeasureMin !== null
+                          ? `${crew.countermeasureMin}/${crew.countermeasureTargetMin} min`
+                          : 'Unknown'}
+                      </strong>
+                    </div>
+                    <span className="hazard-row-meta">
+                      {crew.bodyMassKg !== null ? `${crew.bodyMassKg} kg` : 'Mass Unknown'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="hazard-row-btn"
+                    onClick={() => focusPart('eye_l', 'organs')}
+                  >
+                    <Eye size={17} className="ok-txt" />
+                    <div className="hazard-row-copy">
+                      <small>Ocular &amp; Fluid Shift (SANS)</small>
+                      <strong
+                        className={crew.ocularCheck === null ? 'unknown-val' : ''}
+                      >
+                        {crew.ocularCheck ?? 'Unknown'}
+                      </strong>
+                    </div>
+                    <span className="hazard-row-meta">
+                      US: {ultrasoundAvailable ? 'Usable' : 'Blocked'}
+                    </span>
+                  </button>
+                </div>
+              </article>
+
+              <article className="command-card symptoms-card">
+                <header className="command-card-header">
+                  <div className="command-card-title">
+                    <ClipboardList size={18} />
+                    <span>Reported Symptoms</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="mini-action-link"
+                    onClick={() => go(1)}
+                  >
+                    + Edit
+                  </button>
+                </header>
+
+                <div className="symptoms-compact-list">
+                  {crew.symptoms.length > 0 ? (
+                    crew.symptoms.map((sym) => (
+                      <div className="symptom-line" key={sym}>
+                        <span className="tiny-dot coral" aria-hidden="true" />
+                        <span>{sym}</span>
+                        <span className="kpi-status-pill coral">REPORTED</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="symptom-line">
+                      <span className="tiny-dot ok" aria-hidden="true" />
+                      <span>None reported</span>
+                      <span className="kpi-status-pill ok">CLEAR</span>
+                    </div>
+                  )}
+                </div>
+              </article>
+
+              <div className="left-foot">
+                <ShieldCheck size={14} /> SYNTHETIC SAMPLE DATA · NOT FOR DIAGNOSIS
               </div>
+            </div>
 
-              <div className="kpi-card-value">
-                <strong
-                  className={crew.radiationDailyMsv === null ? 'unknown-val' : ''}
-                >
-                  {crew.radiationDailyMsv ?? 'Unknown'}
-                </strong>
-                {crew.radiationDailyMsv !== null && <small>mSv/day</small>}
-              </div>
+            {/* CENTER STAGE: INTERACTIVE 3D HUMAN ANATOMY EXPLORER */}
+            <BodyViewer
+              selectedPart={selectedPart}
+              setSelectedPart={setSelectedPart}
+              layerMode={layerMode}
+              setLayerMode={setLayerMode}
+              autoRotate={autoRotate}
+              setAutoRotate={setAutoRotate}
+              sex={sex}
+              setSex={setSex}
+              modelStatus={modelStatus}
+              setModelStatus={setModelStatus}
+            />
 
-              <span className="kpi-card-label">Space Radiation Dosimetry</span>
+            {/* RIGHT STACK: SELECTED ANATOMY, NEXT-CHECK NAVIGATION & DATA COVERAGE */}
+            <div className="right-stack">
+              <article className="command-card selected-card">
+                <header className="command-card-header">
+                  <div className="command-card-title">
+                    <ScanLine size={18} />
+                    <span>Selected Anatomy</span>
+                  </div>
+                  <span className="realtime-tag">CLICK 3D MODEL</span>
+                </header>
 
-              <div className="hazard-detail-rows">
-                <div className="hazard-kv">
-                  <span>Cumulative (180d):</span>
-                  <b
+                <div className="selected-top">
+                  <div className="selected-organ-icon">
+                    <UserRound size={20} />
+                  </div>
+                  <div className="selected-title-wrap">
+                    <small>{part.system}</small>
+                    <h3>{part.label}</h3>
+                  </div>
+                  <span className="kpi-status-pill ok">SELECTED</span>
+                </div>
+
+                <p className="selected-desc">{part.description}</p>
+
+                <div className="selected-metric">
+                  <span>{part.metric}</span>
+                  <strong
                     className={
-                      crew.radiationCumulativeMsv === null ? 'unknown-val' : ''
+                      part.value.includes('Unknown') ? 'unknown-val' : ''
                     }
                   >
-                    {crew.radiationCumulativeMsv !== null
-                      ? `${crew.radiationCumulativeMsv} mSv`
-                      : 'Unknown'}
-                  </b>
+                    {part.value}
+                  </strong>
                 </div>
-                <div className="hazard-kv">
-                  <span>Transit Baseline:</span>
-                  <b>{crew.radiationBaselineMsv} mSv/day</b>
-                </div>
-              </div>
 
-              <div className="kpi-card-footer">
-                <span>
-                  Dosimeter: {dosimeterAvailable ? 'Available' : 'Unavailable'}
-                </span>
-                <span>Synthetic Demo</span>
-              </div>
-            </article>
-
-            {/* Hazard Card 2: Microgravity Countermeasure & Bone/Muscle Load */}
-            <article className="status-kpi-card" onClick={() => go(1)}>
-              <div className="kpi-card-top">
-                <span className="kpi-icon-badge purple-icon">
-                  <Dumbbell size={18} />
-                </span>
-                <span
-                  className={`kpi-status-pill ${
-                    crew.countermeasureMin === null
-                      ? 'amber'
-                      : crew.countermeasureMin < crew.countermeasureTargetMin
-                      ? 'amber'
-                      : 'ok'
-                  }`}
-                >
-                  {crew.countermeasureMin === null
-                    ? 'UNKNOWN'
-                    : crew.countermeasureMin >= crew.countermeasureTargetMin
-                    ? 'PROTOCOL MET'
-                    : 'BELOW TARGET'}
-                </span>
-              </div>
-
-              <div className="kpi-card-value">
-                <strong
-                  className={crew.countermeasureMin === null ? 'unknown-val' : ''}
-                >
-                  {crew.countermeasureMin ?? 'Unknown'}
-                </strong>
-                {crew.countermeasureMin !== null && (
-                  <small>/ {crew.countermeasureTargetMin} min</small>
+                {part.note && (
+                  <div className="part-note">
+                    <Info size={13} />
+                    <span>{part.note}</span>
+                  </div>
                 )}
-              </div>
+              </article>
 
-              <span className="kpi-card-label">
-                Microgravity Countermeasure (ARED)
-              </span>
-
-              <div className="hazard-detail-rows">
-                <div className="hazard-kv">
-                  <span>Body Mass (SLAMMD):</span>
-                  <b className={crew.bodyMassKg === null ? 'unknown-val' : ''}>
-                    {crew.bodyMassKg !== null
-                      ? `${crew.bodyMassKg} kg`
-                      : 'Unknown'}
-                  </b>
+              <article className="command-card next-check-status-card compact-nc">
+                <div className="nc-card-header">
+                  <span className="wide-planetary-label left-aligned">
+                    N E X T - C H E C K
+                  </span>
+                  <span className={`kpi-status-pill ${view.statusTone}`}>
+                    {view.statusBadge}
+                  </span>
                 </div>
-                <div className="hazard-kv">
-                  <span>Pre-Flight Baseline:</span>
-                  <b>
-                    {crew.baselineMassKg} kg
-                    {crew.bodyMassKg !== null
-                      ? ` (${(crew.bodyMassKg - crew.baselineMassKg).toFixed(1)} kg)`
-                      : ''}
-                  </b>
+
+                <h3>{view.nextCheckTitle}</h3>
+                <p>{view.selectedExplanation}</p>
+
+                <div className="nc-status-chips">
+                  <div className="nc-chip">
+                    <Package size={14} />
+                    <span>
+                      Usable: <b>{usableEquipCount}/{inventory.length}</b>
+                    </span>
+                  </div>
+                  <div className="nc-chip">
+                    <ShieldAlert size={14} />
+                    <span>
+                      BP Mon:{' '}
+                      <b className={!monitor ? 'unknown-val' : ''}>
+                        {monitor ? 'Ready' : 'Blocked'}
+                      </b>
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              <div className="kpi-card-footer">
-                <span>Deconditioning log</span>
-                <span>Synthetic Demo</span>
-              </div>
-            </article>
-
-            {/* Hazard Card 3: Microgravity Fluid Shift & Ocular (SANS) Check */}
-            <article className="status-kpi-card" onClick={() => go(4)}>
-              <div className="kpi-card-top">
-                <span className="kpi-icon-badge">
-                  <Eye size={18} />
-                </span>
-                <span
-                  className={`kpi-status-pill ${
-                    crew.ocularCheck === null ? 'amber' : 'ok'
-                  }`}
-                >
-                  {crew.ocularCheck === null ? 'UNKNOWN' : 'RECORDED'}
-                </span>
-              </div>
-
-              <div className="kpi-card-value symptom-val">
-                <strong className={crew.ocularCheck === null ? 'unknown-val' : ''}>
-                  {crew.ocularCheck ?? 'Unknown (Unmeasured)'}
-                </strong>
-              </div>
-
-              <span className="kpi-card-label">
-                Microgravity Ocular &amp; Fluid-Shift Check (SANS)
-              </span>
-
-              <div className="hazard-detail-rows">
-                <div className="hazard-kv">
-                  <span>Ultrasound Unit:</span>
-                  <b className={!ultrasoundAvailable ? 'unknown-val' : ''}>
-                    {ultrasoundAvailable ? 'Available' : 'Unavailable'}
-                  </b>
+                <div className="slide-action-pill-track">
+                  <button
+                    type="button"
+                    className="slide-pill-secondary"
+                    onClick={() => go(1)}
+                  >
+                    Check-In
+                  </button>
+                  <button
+                    type="button"
+                    className="slide-pill-thumb"
+                    onClick={() => go(2)}
+                    aria-label="Open Health Investigation"
+                  >
+                    <span>Investigate</span>
+                    <ArrowUpRight size={16} />
+                  </button>
                 </div>
-                <div className="hazard-kv">
-                  <span>Safety Rule:</span>
-                  <b>Never inferred from vitals</b>
-                </div>
-              </div>
+              </article>
 
-              <div className="kpi-card-footer">
-                <span>
-                  {ultrasoundAvailable
-                    ? 'Ocular scan feasible'
-                    : 'Imaging check blocked'}
-                </span>
-                <span>Inventory →</span>
-              </div>
-            </article>
+              <article className="command-card coverage-card">
+                <header className="command-card-header">
+                  <div className="command-card-title">
+                    <Database size={18} />
+                    <span>Data Coverage</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="mini-action-link"
+                    onClick={() => go(4)}
+                  >
+                    Inventory →
+                  </button>
+                </header>
+
+                <div className="coverage-content">
+                  <div
+                    className="coverage-circle"
+                    style={
+                      {
+                        '--pct': `${recordedPct}%`,
+                        '--unknown': `${recordedPct + unknownOnlyPct}%`,
+                      } as React.CSSProperties
+                    }
+                  >
+                    <div>
+                      <strong>{recordedPct}%</strong>
+                      <small>RECORDED</small>
+                    </div>
+                  </div>
+
+                  <div className="coverage-key">
+                    <div>
+                      <span>
+                        <span className="tiny-dot ok" aria-hidden="true" />
+                        Recorded ({recordedCount}/8)
+                      </span>
+                      <strong>{recordedPct}%</strong>
+                    </div>
+                    <div>
+                      <span>
+                        <span className="tiny-dot amber" aria-hidden="true" />
+                        Unknown ({unknownOnlyCount}/8)
+                      </span>
+                      <strong>{unknownOnlyPct}%</strong>
+                    </div>
+                    <div>
+                      <span>
+                        <span className="tiny-dot muted" aria-hidden="true" />
+                        No Sensor ({blockedBySensorCount}/8)
+                      </span>
+                      <strong>{blockedPct}%</strong>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
           </div>
 
-          {/* ROW 3: NEXT-CHECK NAVIGATION CARD + MULTI-METRIC 7-DAY TREND CARD */}
-          <div className="dashboard-middle-grid">
-            <article className="next-check-status-card">
-              <div className="nc-card-header">
-                <span className="wide-planetary-label left-aligned">
-                  N E X T - C H E C K &nbsp; N A V I G A T I O N
-                </span>
-                <span className={`kpi-status-pill ${view.statusTone}`}>
-                  {view.statusBadge}
-                </span>
-              </div>
-
-              <h3>{view.nextCheckTitle}</h3>
-              <p>{view.selectedExplanation}</p>
-
-              <div className="nc-status-chips">
-                <div className="nc-chip">
-                  <Package size={14} />
-                  <span>
-                    Equipment: <b>{usableEquipCount}/{inventory.length} Usable</b>
-                  </span>
-                </div>
-                <div className="nc-chip">
-                  <ShieldAlert size={14} />
-                  <span>
-                    BP Monitor:{' '}
-                    <b className={!monitor ? 'unknown-val' : ''}>
-                      {monitor ? 'Available' : 'Unavailable'}
-                    </b>
-                  </span>
-                </div>
-                <div className="nc-chip">
-                  <Eye size={14} />
-                  <span>
-                    Ultrasound:{' '}
-                    <b className={!ultrasoundAvailable ? 'unknown-val' : ''}>
-                      {ultrasoundAvailable ? 'Available' : 'Unavailable'}
-                    </b>
-                  </span>
-                </div>
-              </div>
-
-              <div className="slide-action-pill-track">
-                <button
-                  type="button"
-                  className="slide-pill-secondary"
-                  onClick={() => go(1)}
-                >
-                  New Health Check-In
-                </button>
-                <button
-                  type="button"
-                  className="slide-pill-thumb"
-                  onClick={() => go(2)}
-                  aria-label="Open Health Investigation"
-                >
-                  <span>Investigate</span>
-                  <ArrowUpRight size={16} />
-                </button>
-              </div>
-            </article>
+          {/* 7-DAY TELEMETRY TREND CARD */}
+          <div className="dashboard-below-trend">
 
             <article className="orbital-trend-card">
               <div className="trend-card-head">
@@ -882,6 +1071,15 @@ export function MissionConsole({
               <dt>Clinical Scope:</dt>
               <dd>Non-Diagnostic Check Navigation</dd>
             </div>
+
+            <button
+              type="button"
+              className="ghost-rect-cta full-width export-json-btn"
+              onClick={() => downloadJSON(crew, inventory, response)}
+            >
+              <Download size={16} />
+              <span>Download Demo JSON</span>
+            </button>
           </aside>
         </div>
       </div>
