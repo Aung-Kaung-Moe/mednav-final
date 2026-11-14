@@ -5,6 +5,12 @@ import {
   SlidersHorizontal,
   RotateCcw,
   FileText,
+  HeartPulse,
+  Stethoscope,
+  Moon,
+  Activity,
+  ShieldAlert,
+  Package,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -176,99 +182,237 @@ export function MissionConsole({
           </div>
         </section>
 
-        {/* VITAL SIGNS & BASELINE DETAIL SECTION */}
-        <section className="telemetry-detail-section">
-          <div className="telemetry-left-column">
-            <h2 className="section-sans-headline">
-              {crew.id}: Vital Signs &amp; Baseline Status
-            </h2>
-
-            <p className="telemetry-summary-copy">
-              {response?.explanation.selected}{' '}
-              {missing.length > 0
-                ? `Unmeasured readings (${missing.join(', ')}) remain flagged as Unknown and are never assumed normal.`
-                : 'All primary vital signs are recorded for medical officer review.'}
-            </p>
-
-            <dl className="hairline-telemetry-list">
-              <div className="telemetry-kv-row rail-reading">
-                <dt>Heart Rate:</dt>
-                <dd className={crew.hr === null ? 'unknown-val' : ''}>
-                  {crew.hr === null
-                    ? 'Unknown'
-                    : `${crew.hr} bpm (Baseline ${crew.baseline} bpm)`}
-                </dd>
+        {/* OVERVIEW HEALTH STATUS DASHBOARD (CARD-BASED PRESENTATION) */}
+        <section className="overview-dashboard-section" aria-label="Crew health status dashboard">
+          <div className="dashboard-header-bar">
+            <div>
+              <div className="wide-planetary-label left-aligned">
+                L I V E &nbsp; H E A L T H &nbsp; D A S H B O A R D
               </div>
+              <h2 className="section-sans-headline">
+                {crew.id} Status Overview · {crew.role}
+              </h2>
+            </div>
 
-              <div className="telemetry-kv-row rail-reading">
-                <dt>Blood Pressure:</dt>
-                <dd className={!bp ? 'unknown-val' : ''}>
-                  {bp ? `${bp} mmHg` : 'Unknown'}
-                </dd>
-              </div>
-
-              <div className="telemetry-kv-row rail-reading">
-                <dt>Sleep Duration:</dt>
-                <dd className={crew.sleep === null ? 'unknown-val' : ''}>
-                  {crew.sleep === null
-                    ? 'Unknown'
-                    : `${crew.sleep} hrs (Baseline ${crew.sleepBaseline} hrs)`}
-                </dd>
-              </div>
-
-              <div className="telemetry-kv-row">
-                <dt>Reported Symptoms:</dt>
-                <dd>{crew.symptoms.join(', ') || 'None reported'}</dd>
-              </div>
-
-              <div className="telemetry-kv-row">
-                <dt>Medical Equipment:</dt>
-                <dd>
-                  {usableEquipCount} / {inventory.length} Usable · BP Monitor{' '}
-                  {monitor ? 'Available' : 'Unavailable'}
-                </dd>
-              </div>
-
-              <div className="telemetry-kv-row">
-                <dt>Recommended Next Check:</dt>
-                <dd>
-                  {response?.next_check?.title ?? 'Escalation Protocol'}
-                </dd>
-              </div>
-            </dl>
-
-            <div className="slide-action-pill-track">
+            <div className="dashboard-header-actions">
               <button
                 type="button"
-                className="slide-pill-secondary"
+                className="hairline-pill-btn"
                 onClick={() => go(1)}
               >
-                New Health Check-In
+                + Log Check-In
               </button>
               <button
                 type="button"
-                className="slide-pill-thumb"
-                onClick={() => go(2)}
-                aria-label="Open Health Investigation"
+                className="hairline-pill-btn"
+                onClick={() => go(3)}
               >
-                <span>Investigate</span>
-                <ArrowUpRight size={16} />
+                What-If Simulator
               </button>
             </div>
           </div>
 
-          <div className="telemetry-right-sphere-col">
-            <div className="orbital-trend-card" onClick={() => go(2)}>
+          {/* ROW 1: 4 VITAL & STATUS KPI CARDS */}
+          <div className="dashboard-kpi-grid">
+            {/* Card 1: Heart Rate */}
+            <article className="status-kpi-card rail-reading" onClick={() => go(1)}>
+              <div className="kpi-card-top">
+                <span className="kpi-icon-badge">
+                  <HeartPulse size={18} />
+                </span>
+                <span
+                  className={`kpi-status-pill ${
+                    crew.hr === null ? 'amber' : 'ok'
+                  }`}
+                >
+                  {crew.hr === null ? 'UNKNOWN' : 'RECORDED'}
+                </span>
+              </div>
+              <div className="kpi-card-value">
+                <strong className={crew.hr === null ? 'unknown-val' : ''}>
+                  {crew.hr ?? 'Unknown'}
+                </strong>
+                {crew.hr !== null && <small>bpm</small>}
+              </div>
+              <span className="kpi-card-label">Heart Rate</span>
+              <div className="kpi-card-footer">
+                <span>Baseline: {crew.baseline} bpm</span>
+                <span>
+                  {crew.hr !== null
+                    ? `${crew.hr - crew.baseline >= 0 ? '+' : ''}${
+                        crew.hr - crew.baseline
+                      } bpm`
+                    : 'Not measured'}
+                </span>
+              </div>
+            </article>
+
+            {/* Card 2: Blood Pressure */}
+            <article className="status-kpi-card rail-reading" onClick={() => go(2)}>
+              <div className="kpi-card-top">
+                <span className="kpi-icon-badge">
+                  <Stethoscope size={18} />
+                </span>
+                <span className={`kpi-status-pill ${!bp ? 'amber' : 'ok'}`}>
+                  {bp ? 'RECORDED' : 'MISSING'}
+                </span>
+              </div>
+              <div className="kpi-card-value">
+                <strong className={!bp ? 'unknown-val' : ''}>
+                  {bp ?? 'Unknown'}
+                </strong>
+                {bp && <small>mmHg</small>}
+              </div>
+              <span className="kpi-card-label">Blood Pressure</span>
+              <div className="kpi-card-footer">
+                <span>Monitor: {monitor ? 'Available' : 'Unavailable'}</span>
+                <span>{bp ? 'Verified' : 'Never assumed normal'}</span>
+              </div>
+            </article>
+
+            {/* Card 3: Sleep Duration */}
+            <article className="status-kpi-card rail-reading" onClick={() => go(1)}>
+              <div className="kpi-card-top">
+                <span className="kpi-icon-badge">
+                  <Moon size={18} />
+                </span>
+                <span
+                  className={`kpi-status-pill ${
+                    crew.sleep === null ? 'amber' : 'ok'
+                  }`}
+                >
+                  {crew.sleep === null ? 'UNKNOWN' : 'RECORDED'}
+                </span>
+              </div>
+              <div className="kpi-card-value">
+                <strong className={crew.sleep === null ? 'unknown-val' : ''}>
+                  {crew.sleep ?? 'Unknown'}
+                </strong>
+                {crew.sleep !== null && <small>hrs</small>}
+              </div>
+              <span className="kpi-card-label">Sleep Duration</span>
+              <div className="kpi-card-footer">
+                <span>Baseline: {crew.sleepBaseline} hrs</span>
+                <span>
+                  {crew.sleep !== null
+                    ? `${(crew.sleep - crew.sleepBaseline >= 0 ? '+' : '')}${(
+                        crew.sleep - crew.sleepBaseline
+                      ).toFixed(1)} hrs`
+                    : 'Not measured'}
+                </span>
+              </div>
+            </article>
+
+            {/* Card 4: Symptoms & Vital Completeness */}
+            <article className="status-kpi-card" onClick={() => go(1)}>
+              <div className="kpi-card-top">
+                <span className="kpi-icon-badge">
+                  <Activity size={18} />
+                </span>
+                <span
+                  className={`kpi-status-pill ${
+                    knownVitalsCount === 3 ? 'ok' : 'amber'
+                  }`}
+                >
+                  {knownVitalsCount}/3 VITALS
+                </span>
+              </div>
+              <div className="kpi-card-value symptom-val">
+                <strong>
+                  {crew.symptoms.length > 0
+                    ? crew.symptoms.join(', ')
+                    : 'No Symptoms'}
+                </strong>
+              </div>
+              <span className="kpi-card-label">Reported Symptoms</span>
+              <div className="kpi-card-footer">
+                <span>
+                  {missing.length > 0
+                    ? `Missing: ${missing.join(', ')}`
+                    : 'Complete record'}
+                </span>
+              </div>
+            </article>
+          </div>
+
+          {/* ROW 2: NEXT-CHECK NAVIGATION CARD + 7-DAY TREND CARD */}
+          <div className="dashboard-middle-grid">
+            <article className="next-check-status-card">
+              <div className="nc-card-header">
+                <span className="wide-planetary-label left-aligned">
+                  N E X T - C H E C K &nbsp; N A V I G A T I O N
+                </span>
+                <span
+                  className={`kpi-status-pill ${
+                    response?.status === 'escalate'
+                      ? 'coral'
+                      : response?.status === 'resource-unavailable'
+                      ? 'amber'
+                      : 'ok'
+                  }`}
+                >
+                  {response?.status === 'escalate'
+                    ? 'ESCALATION PROTOCOL'
+                    : response?.status === 'resource-unavailable'
+                    ? 'RESOURCE UNAVAILABLE'
+                    : 'OFFICER REVIEW PENDING'}
+                </span>
+              </div>
+
+              <h3>
+                {response?.next_check?.title ?? 'Escalation Protocol Active'}
+              </h3>
+              <p>{response?.explanation.selected}</p>
+
+              <div className="nc-status-chips">
+                <div className="nc-chip">
+                  <Package size={14} />
+                  <span>
+                    Equipment: <b>{usableEquipCount}/{inventory.length} Usable</b>
+                  </span>
+                </div>
+                <div className="nc-chip">
+                  <ShieldAlert size={14} />
+                  <span>
+                    BP Monitor:{' '}
+                    <b className={!monitor ? 'unknown-val' : ''}>
+                      {monitor ? 'Available' : 'Unavailable'}
+                    </b>
+                  </span>
+                </div>
+              </div>
+
+              <div className="slide-action-pill-track">
+                <button
+                  type="button"
+                  className="slide-pill-secondary"
+                  onClick={() => go(1)}
+                >
+                  New Health Check-In
+                </button>
+                <button
+                  type="button"
+                  className="slide-pill-thumb"
+                  onClick={() => go(2)}
+                  aria-label="Open Health Investigation"
+                >
+                  <span>Investigate</span>
+                  <ArrowUpRight size={16} />
+                </button>
+              </div>
+            </article>
+
+            <article className="orbital-trend-card" onClick={() => go(2)}>
               <div className="trend-card-head">
-                <span className="wide-planetary-label">
+                <span className="wide-planetary-label left-aligned">
                   7 - D A Y &nbsp; H E A R T &nbsp; R A T E &nbsp; T R E N D
                 </span>
                 <span className="trend-sub-val">
-                  D174–D180 · Synthetic
+                  {crew.id} · D174–D180 (Synthetic)
                 </span>
               </div>
               <div className="trend-chart-wrap">
-                <ResponsiveContainer width="100%" height={180}>
+                <ResponsiveContainer width="100%" height={195}>
                   <AreaChart data={history}>
                     <defs>
                       <linearGradient id="cobaltGrad" x1="0" y1="0" x2="0" y2="1">
@@ -294,7 +438,68 @@ export function MissionConsole({
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </article>
+          </div>
+
+          {/* ROW 3: CREW HEALTH ROSTER CARDS */}
+          <div className="roster-section-head">
+            <span className="wide-planetary-label left-aligned">
+              C R E W &nbsp; H E A L T H &nbsp; R O S T E R
+            </span>
+          </div>
+
+          <div className="crew-roster-grid">
+            {profiles.map((member) => {
+              const isSelected = member.id === crew.id;
+              const memberBp = isSelected ? bp : member.bp;
+              return (
+                <button
+                  key={member.id}
+                  type="button"
+                  className={`crew-roster-card ${isSelected ? 'active' : ''}`}
+                  onClick={() => onSelectCrew(member.id)}
+                >
+                  <div className="roster-card-top">
+                    <div>
+                      <strong>{member.id}</strong>
+                      <span>{member.role}</span>
+                    </div>
+                    <span
+                      className={`kpi-status-pill ${
+                        isSelected ? 'ok' : 'neutral'
+                      }`}
+                    >
+                      {isSelected ? 'ACTIVE' : 'VIEW'}
+                    </span>
+                  </div>
+
+                  <div className="roster-metrics-strip">
+                    <div className="roster-mini-stat">
+                      <small>HR</small>
+                      <b className={member.hr === null ? 'unknown-val' : ''}>
+                        {member.hr !== null ? `${member.hr} bpm` : 'Unknown'}
+                      </b>
+                    </div>
+                    <div className="roster-mini-stat">
+                      <small>SLEEP</small>
+                      <b className={member.sleep === null ? 'unknown-val' : ''}>
+                        {member.sleep !== null ? `${member.sleep} h` : 'Unknown'}
+                      </b>
+                    </div>
+                    <div className="roster-mini-stat">
+                      <small>BP</small>
+                      <b className={!memberBp ? 'unknown-val' : ''}>
+                        {memberBp ?? 'Unknown'}
+                      </b>
+                    </div>
+                  </div>
+
+                  <div className="roster-symptoms-line">
+                    Symptoms: {member.symptoms.join(', ') || 'None reported'}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
       </div>
