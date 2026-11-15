@@ -3892,9 +3892,9 @@
   font-weight: 700 !important;
 }
 
-.inv-inventory-toolbar-row {
+.inventory-toolbar.inv-inventory-toolbar-row {
   display: flex !important;
-  align-items: flex-end;
+  align-items: flex-end !important;
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
@@ -3904,9 +3904,25 @@
   flex: 1 1 280px;
 }
 
+.inv-inventory-toolbar-row .filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.inv-inventory-toolbar-row .filters input {
+  height: 40px;
+  box-sizing: border-box;
+}
+
 .inv-manage-stock-btn {
   height: 40px;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .inv-stock-status-col {
