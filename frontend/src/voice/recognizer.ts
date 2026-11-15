@@ -1,3 +1,4 @@
+const VOICE_BASE = (import.meta as unknown as { env: Record<string, string> }).env.VITE_VOICE_URL || '/mednav-voice';
 type OnResult = (text: string) => void;
 
 function wav(samples: Float32Array, rate: number): Blob {
