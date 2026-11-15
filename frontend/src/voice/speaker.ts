@@ -1,3 +1,4 @@
+const PIPER_BASE = (import.meta as unknown as { env: Record<string, string> }).env.VITE_PIPER_URL || '/piper';
 /** Local Piper output. Prime Web Audio from a user click so delayed synthesis can play. */
 export class LocalSpeaker {
   private context: AudioContext | null = null;
@@ -28,7 +29,7 @@ export class LocalSpeaker {
     try {
       let bytes = this.cache.get(text);
       if (!bytes) {
-        const response = await fetch('/piper/synthesize', {
+        const response = await fetch(`${PIPER_BASE}/synthesize`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text }), signal: controller.signal,
         });
