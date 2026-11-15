@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -14,6 +14,21 @@ from sqlalchemy.orm import Session
 
 from .database import AstronautRow, Base, CheckInRow, InventoryRow, create_database
 from .investigation import FixtureAdapter, InvestigationAdapter, UnknownFixture
+from .iterative_investigation import (
+    DispenseRequest,
+    InvestigationSessionDTO,
+    MissionContextDTO,
+    MissionContextUpdate,
+    StartSessionRequest,
+    SubmitAnswerRequest,
+    build_mission_context_dto,
+    dispense_session_allocation,
+    get_latest_session,
+    reset_mission_context,
+    start_investigation_session,
+    submit_session_answer,
+    update_mission_context,
+)
 from .schemas import Astronaut, CheckIn, CheckInCreate, HistoryPoint, InventoryItem, InventoryUpdate, InvestigationRequest, InvestigationResponse
 from .seed import seed
 from .schemas import EvaluationRequest
@@ -73,6 +88,8 @@ def create_app(database_url: str | None = None, *, adapter: InvestigationAdapter
     app = FastAPI(title="MEDNAV Synthetic Backend", version="0.1.0", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.sessions = sessions
     app.state.engine = engine
+    from .follow_ups import register_follow_ups
+    register_follow_ups(app, db)
     from .voice import router as voice_router
     app.include_router(voice_router)
     app.state.investigation_mode = mode
@@ -171,6 +188,61 @@ def create_app(database_url: str | None = None, *, adapter: InvestigationAdapter
         except Exception:
             logger.exception("Stable evaluation failed")
             raise HTTPException(500, "Evaluation failed") from None
+
+    @app.get("/api/v1/investigation/mission-context", response_model=MissionContextDTO)
+    def get_mission_context(session: Session = Depends(db)):
+        return build_mission_context_dto(session)
+
+    @app.patch("/api/v1/investigation/mission-context", response_model=MissionContextDTO)
+    def patch_mission_context(body: MissionContextUpdate, session: Session = Depends(db)):
+        try:
+            return update_mission_context(session, body)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from None
+
+    @app.post("/api/v1/investigation/mission-context/reset", response_model=MissionContextDTO)
+    def reset_mission_context_route(session: Session = Depends(db)):
+        return reset_mission_context(session)
+
+    @app.post("/api/v1/investigation/sessions", response_model=InvestigationSessionDTO, status_code=201)
+    def start_session_route(body: StartSessionRequest, session: Session = Depends(db)):
+        try:
+            return start_investigation_session(session, body)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from None
+
+    @app.get("/api/v1/investigation/sessions/latest/{astronaut_id}", response_model=InvestigationSessionDTO)
+    def latest_session_route(astronaut_id: str, session: Session = Depends(db)):
+        try:
+            return get_latest_session(session, astronaut_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from None
+
+    @app.post("/api/v1/investigation/sessions/{session_id}/answer", response_model=InvestigationSessionDTO)
+    def answer_session_route(session_id: str, body: SubmitAnswerRequest, session: Session = Depends(db)):
+        try:
+            return submit_session_answer(session, session_id, body)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    @app.post("/api/v1/investigation/sessions/{session_id}/dispense", response_model=InvestigationSessionDTO)
+    def dispense_session_route(
+        session_id: str,
+        body: DispenseRequest | None = Body(default=None),
+        session: Session = Depends(db),
+    ):
+        try:
+            return dispense_session_allocation(
+                session,
+                session_id,
+                medication_id=body.medication_id if body else None,
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
 
     return app
 

@@ -19,8 +19,10 @@ import {
   mountAnatomy,
   type AnatomyController,
 } from '../three/anatomyScene';
+import {regionForPart,evidenceLabels,type BodySystem,type EvidenceState} from '../data/bodyGraph';
 
 type BodyViewerProps = {
+  evidence?:Partial<Record<BodySystem,EvidenceState>>;
   selectedPart: string;
   setSelectedPart: (part: string) => void;
   layerMode: AnatomyLayerMode;
@@ -34,6 +36,7 @@ type BodyViewerProps = {
 };
 
 export function BodyViewer({
+  evidence={},
   selectedPart,
   setSelectedPart,
   layerMode,
@@ -102,25 +105,19 @@ export function BodyViewer({
       <div className="stage-head">
         <div>
           <div className="wide-planetary-label left-aligned">
-            M E D N A V &nbsp; / &nbsp; A N A T O M Y &nbsp; E X P L O R E R
+            A N A T O M Y &nbsp; T E L E M E T R Y
           </div>
           <h2>
-            Interactive Human Model <span className="beta">3D</span>
+            Crew Anatomy <span className="beta">3D</span>
           </h2>
         </div>
 
         <div className="live-demo">
-          <span
-            className={`tiny-dot ${
-              modelStatus === 'detailed' ? 'ok' : 'amber'
-            }`}
-            aria-hidden="true"
-          />
           {modelStatus === 'detailed'
-            ? 'DETAILED ANATOMY'
+            ? '3D ACTIVE'
             : modelStatus === 'loading'
-            ? 'LOADING MODEL'
-            : 'SCHEMATIC MODEL'}
+            ? 'LOADING'
+            : 'SCHEMATIC'}
         </div>
       </div>
 
@@ -216,16 +213,15 @@ export function BodyViewer({
       </div>
 
       <div className="stage-bottom">
-        <div className="viewer-guide">
-          <RotateCcw size={14} /> DRAG TO ROTATE{' '}
-          <span className="guide-divide">·</span> SCROLL TO ZOOM{' '}
-          <span className="guide-divide">·</span> CLICK A BODY PART
-        </div>
-
         <div className="quick-parts">
-          {FREQUENT_PARTS.map((key) => (
+          {FREQUENT_PARTS.map((key) => {
+            const system=regionForPart(key),state=system?evidence[system]:undefined;
+            return (
             <button
               key={key}
+              aria-label={formatPartKey(key)}
+              aria-description={state?evidenceLabels(state).join('; '):undefined}
+              title={state?evidenceLabels(state).join(' · '):undefined}
               type="button"
               className={selectedPart === key ? 'quick-active' : ''}
               onClick={() => {
@@ -243,20 +239,9 @@ export function BodyViewer({
               }}
             >
               {formatPartKey(key)}
+              {state&&<span className="bodygraph-evidence-marks" aria-hidden="true">{state.recorded&&<i className="evidence-recorded">●</i>}{state.changed&&<i className="evidence-change">◇</i>}{state.missing&&<i className="evidence-missing">?</i>}{state.review&&<i className="evidence-review">↗</i>}</span>}
             </button>
-          ))}
-        </div>
-
-        <div className="model-credit">
-          Model:{' '}
-          <a
-            href="https://github.com/MervinR07/open-anatomy-3d"
-            target="_blank"
-            rel="noreferrer"
-          >
-            open-anatomy-3d
-          </a>{' '}
-          (CC BY 4.0) · DBCLS / HuBMAP / MakeHuman · Synthetic Telemetry Demo
+          )})}
         </div>
       </div>
     </section>

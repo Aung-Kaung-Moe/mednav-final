@@ -1,32 +1,69 @@
-import React, { useEffect, useState } from 'react';
-import {useBackend} from './api';
+import React, { useEffect, useRef, useState } from 'react';
+import { useBackend } from './api';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowUpRight,
   Check,
   Menu,
   X,
-  RotateCcw,
   LayoutDashboard,
   ClipboardList,
   Microscope,
-  SlidersHorizontal,
   Package,
   FileText,
-  Info,
-  UserRound,
+  RefreshCw,
+  ShieldCheck,
 } from 'lucide-react';
 import { MissionConsole } from './components/MissionConsole';
+import { IterativeInvestigation } from './components/IterativeInvestigation';
+import { FollowUpPanel } from './components/FollowUpPanel';
+import VoiceAssistant from './voice/VoiceAssistant';
+import { configureVoiceDemo } from './voice/currentDemo';
+import type { InvestigationResponse } from './voice/types';
 import { VoiceCheckIn } from './components/VoiceCheckIn';
-import { Panel, Badge } from './components/ui';
-import { crews, equipment, symptomOptions, type Crew } from './data/fixtures';
+import { Panel } from './components/ui';
+import { crews, symptomOptions, type Crew } from './data/fixtures';
+import type { MedicationStockDTO } from './types/api';
 import './styles.css';
+
+function playDoubleAlertSound(): void {
+  try {
+    const win = window as Window & {
+      webkitAudioContext?: typeof AudioContext;
+      __mednavAlertCount?: number;
+    };
+    win.__mednavAlertCount = (win.__mednavAlertCount ?? 0) + 2;
+    const AudioCtx = window.AudioContext || win.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    if (ctx.state === 'suspended') {
+      void ctx.resume();
+    }
+    const playTone = (startOffset: number, freq: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + startOffset);
+      gain.gain.setValueAtTime(0.001, ctx.currentTime + startOffset);
+      gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + startOffset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startOffset + 0.16);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + startOffset);
+      osc.stop(ctx.currentTime + startOffset + 0.17);
+    };
+    // Two alert tones to notify all crew onboard when medication stock is manually edited
+    playTone(0.02, 880);
+    playTone(0.26, 988);
+  } catch {
+    // Audio playback unavailable in restricted environment
+  }
+}
 
 const navItems = [
   { label: 'Dashboard', page: 0, icon: LayoutDashboard },
   { label: 'Health Check-In', page: 1, icon: ClipboardList },
   { label: 'Investigation', page: 2, icon: Microscope },
-  { label: 'What-If Lab', page: 3, icon: SlidersHorizontal },
   { label: 'Medical Inventory', page: 4, icon: Package },
   { label: 'Incident Report', page: 5, icon: FileText },
 ];
@@ -37,30 +74,66 @@ const value = (v: number | string | null, unit = '') =>
 function App() {
   const [page, setPage] = useState(0);
   const [crewId, setCrewId] = useState('Crew A');
-  const backend=useBackend(crewId);
+  const backend=useBackend(crewId,page===0);
   const {profiles,inventory,flags}=backend;
   const [mobile, setMobile] = useState(false);
-  const [, setActivity] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
-  const setFlags=(update:boolean[]|((f:boolean[])=>boolean[]))=>backend.changeFlags(typeof update==='function'?update(flags):update);
+  const [inventoryAlert, setInventoryAlert] = useState<string | null>(null);
+  const alertTimerRef = useRef<number | null>(null);
+  const [voiceResponse, setVoiceResponse] = useState<InvestigationResponse | null>(null);
+  const setFlags = (update: boolean[] | ((f: boolean[]) => boolean[])) =>
+    backend.changeFlags(typeof update === 'function' ? update(flags) : update);
 
-  useEffect(()=>{if(backend.initialized&&profiles.length&&!profiles.some(c=>c.id===crewId))setCrewId(profiles[0].id);},[backend.initialized,profiles,crewId]);
+  useEffect(() => {
+    return () => {
+      if (alertTimerRef.current !== null) {
+        window.clearTimeout(alertTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (backend.initialized && profiles.length && !profiles.some((c) => c.id === crewId)) {
+      setCrewId(profiles[0].id);
+    }
+  }, [backend.initialized, profiles, crewId]);
+
   const crew = profiles.find((c) => c.id === crewId) ?? profiles[0];
 
+  configureVoiceDemo({
+    profiles,
+    inventory,
+    save: (next) => {
+      void backend.save(next);
+    },
+  });
+
+  useEffect(() => {
+    const onVoiceResult = (event: Event) => {
+      const detail = (event as CustomEvent<{ response: InvestigationResponse }>).detail;
+      if (detail?.response) setVoiceResponse(detail.response);
+    };
+    window.addEventListener('mednav:voice-investigation', onVoiceResult);
+    return () => window.removeEventListener('mednav:voice-investigation', onVoiceResult);
+  }, []);
+
   const go = (p: number) => {
+    if (p === 0) backend.refresh();
     setPage(p);
     setMobile(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectCrew = (nextId: string) => {
+    setVoiceResponse(null);
+    backend.selectLatest();
     setCrewId(nextId);
     const nextCrew = profiles.find((c) => c.id === nextId)!;
     setFlags((f) => [f[0], nextCrew.bp !== null, f[2], f[3]]);
   };
 
-  const isConsolePage = [0, 2, 3, 5].includes(page);
+  const isConsolePage = [0, 5].includes(page);
 
   return (
     <div className="app-shell">
@@ -111,7 +184,7 @@ function App() {
               <small>
                 Space Health Program
                 <br />
-                Synthetic Offline Demo
+                Offline Telemetry
               </small>
             </div>
           </div>
@@ -131,8 +204,6 @@ function App() {
           </button>
 
           <div className="brand-divider" aria-hidden="true" />
-          <div className="main-brand">MEDNAV</div>
-          <div className="header-separator" aria-hidden="true" />
           <div className="header-subtitle">Astronaut Health Monitoring</div>
 
           <div className="topbar-right">
@@ -152,11 +223,7 @@ function App() {
             </label>
 
             <div className="prototype-label">
-              <Info size={15} /> Synthetic Telemetry · Non-Diagnostic
-            </div>
-
-            <div className="user-icon" aria-hidden="true">
-              <UserRound size={22} />
+              Synthetic Telemetry · Non-Diagnostic
             </div>
           </div>
         </header>
@@ -164,10 +231,10 @@ function App() {
         <main id="main">
         {backend.live&&backend.busy&&<p role="status" className="sheet-footnote">Evaluating…</p>}
         {backend.error&&<p role="alert" className="error">{backend.error} <button className="hairline-pill-btn" onClick={backend.retry}>Retry backend</button></p>}
-        {isConsolePage && (!backend.live || backend.result!==null) && (
+        {isConsolePage && (!backend.live || backend.result!==null || (page===0&&backend.initialized)) && (
           <MissionConsole
             key={page}
-            crew={crew}
+            crew={backend.live&&page!==0&&backend.record?{...crew,hr:backend.record.hr,sleep:backend.record.sleep,bp:backend.record.bp,symptoms:backend.record.symptoms}:crew}
             profiles={profiles}
             onSelectCrew={handleSelectCrew}
             inventory={inventory}
@@ -175,9 +242,17 @@ function App() {
             liveResponse={backend.result}
             liveHistory={backend.history}
             liveRecord={backend.record}
+            liveRecords={backend.records}
+            historyLoading={backend.historyLoading}
+            historyError={backend.historyError}
+            lastSyncedAt={backend.lastSyncedAt}
+            onRefresh={backend.refresh}
+            refreshing={backend.busy}
+            onInvestigate={(id)=>{backend.investigate(id);go(2)}}
             flags={flags}
             setFlags={backend.changeFlags}
             page={page}
+            voiceResponse={voiceResponse}
             go={go}
           />
         )}
@@ -192,21 +267,38 @@ function App() {
           />
         )}
 
+        {page === 2 && (!backend.live||backend.initialized) && (
+          <>
+            <IterativeInvestigation
+              live={backend.live}
+              crew={crew}
+              liveRecord={backend.record}
+              inventory={inventory}
+              onStockChanged={() => backend.refreshMissionData()}
+              go={go}
+            />
+            {backend.live&&backend.result&&backend.savedId&&<FollowUpPanel key={`${crew.id}:${backend.savedId}`} crewId={crew.id} checkInId={backend.savedId}/>}
+          </>
+        )}
+
         {page === 4 && (!backend.live||backend.initialized) && (
           <div className="space-subpage">
             <div className="asymmetric-workspace-grid">
               <section className="left-telemetry-column">
-                <div className="wide-planetary-label left-aligned">
-                  M E D I C A L &nbsp; I N V E N T O R Y &nbsp; · &nbsp; D A Y &nbsp; 1 8 0
-                </div>
                 <h1 className="section-sans-headline">
-                  Onboard Medical Equipment
+                  Onboard Medical Inventory &amp; Medications
                 </h1>
-                <p className="telemetry-summary-copy">
-                  Verify and toggle usable status for onboard medical devices and
-                  consumables. Unavailable equipment is automatically excluded
-                  from recommended next checks.
-                </p>
+
+                {inventoryAlert && (
+                  <div
+                    role="status"
+                    data-testid="crew-alert-banner"
+                    data-beeps="2"
+                    className="inv-crew-alert-banner"
+                  >
+                    <strong>Crew Alert (2× audio beep):</strong> {inventoryAlert}
+                  </div>
+                )}
 
                 <div className="inventory-toolbar">
                   <div
@@ -216,6 +308,7 @@ function App() {
                   >
                     {[
                       'All',
+                      'Medications',
                       'Monitoring',
                       'Documentation',
                       'Imaging',
@@ -236,83 +329,133 @@ function App() {
 
                   <div className="filters">
                     <label>
-                      Search equipment
+                      Search inventory
                       <input
-                        placeholder="Filter by equipment name…"
+                        placeholder="Filter by name…"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                       />
                     </label>
-                    <Badge>
-                      {inventory.filter((e) => e.available).length} /{' '}
-                      {inventory.length} USABLE
-                    </Badge>
                   </div>
                 </div>
 
-                <div className="hairline-telemetry-list">
-                  {inventory
-                    .filter(
-                      (e) =>
-                        e.name.toLowerCase().includes(search.toLowerCase()) &&
-                        (category === 'All' || e.category === category)
-                    )
-                    .map((e) => (
-                      <article
-                        className="equipment-hairline-row"
-                        key={e.name}
-                      >
-                        <div className="equip-row-left">
-                          <strong>{e.name}</strong>
-                          <span>
-                            {e.category} · Quantity {e.quantity} ·{' '}
-                            <em className={e.available ? 'ok-txt' : 'unknown-val'}>
-                              {e.available ? 'Usable' : 'Unavailable'}
-                            </em>
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          className="hairline-pill-btn"
-                          disabled={backend.busy||(!e.available&&e.quantity===0)}
-                          title={!e.available&&e.quantity===0?'Cannot enable zero-quantity equipment. Quantity changes require the inventory API.':undefined}
-                          onClick={() => {
-                            void backend.updateInventory(e.name,!e.available);
-                          }}
+                {(category === 'All' || category === 'Medications') && backend.medications.length > 0 && (
+                  <div className="inv-med-inventory-section">
+                    <div className="hairline-telemetry-list">
+                      {backend.medications
+                        .filter((m) => m.name.toLowerCase().includes(search.toLowerCase()))
+                        .map((m) => (
+                          <MedicationInventoryRow
+                            key={m.id}
+                            med={m}
+                            busy={backend.busy}
+                            onUpdate={async (qty) => {
+                              const prev = m.quantity;
+                              await backend.updateMedicationQuantity(m.id, qty);
+                              playDoubleAlertSound();
+                              setInventoryAlert(
+                                `${m.name} manually updated (${prev} → ${qty} ${m.unit}).`
+                              );
+                              if (alertTimerRef.current !== null) {
+                                window.clearTimeout(alertTimerRef.current);
+                              }
+                              alertTimerRef.current = window.setTimeout(() => {
+                                setInventoryAlert(null);
+                                alertTimerRef.current = null;
+                              }, 1000);
+                            }}
+                          />
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {category !== 'Medications' && (
+                  <div className="hairline-telemetry-list" style={{ marginTop: 18 }}>
+                    {inventory
+                      .filter(
+                        (e) =>
+                          e.name.toLowerCase().includes(search.toLowerCase()) &&
+                          (category === 'All' || e.category === category)
+                      )
+                      .map((e) => (
+                        <article
+                          className="equipment-hairline-row"
+                          key={e.name}
                         >
-                          Mark {e.available ? 'Unavailable' : 'Usable'}
-                        </button>
-                      </article>
-                    ))}
-                </div>
+                          <div className="equip-row-left">
+                            <strong>{e.name}</strong>
+                            <span>
+                              {e.category} · Quantity {e.quantity} ·{' '}
+                              <em className={e.available ? 'ok-txt' : 'unknown-val'}>
+                                {e.available ? 'Usable' : 'Unavailable'}
+                              </em>
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="hairline-pill-btn"
+                            disabled={backend.busy||(!e.available&&e.quantity===0)}
+                            title={!e.available&&e.quantity===0?'Cannot enable zero-quantity equipment. Quantity changes require the inventory API.':undefined}
+                            onClick={() => {
+                              void backend.updateInventory(e.name,!e.available);
+                            }}
+                          >
+                            Mark {e.available ? 'Unavailable' : 'Usable'}
+                          </button>
+                        </article>
+                      ))}
+                  </div>
+                )}
               </section>
 
-              <aside className="right-frosted-sheet">
-                <div className="wide-planetary-label left-aligned">
-                  E Q U I P M E N T &nbsp; R E A D I N E S S
+              <aside className="right-frosted-sheet inv-readiness-panel">
+                <div className="inv-readiness-head">
+                  <span className="micro-label">ONBOARD MEDICAL READINESS</span>
                 </div>
+
                 <dl className="hairline-telemetry-list compact-list">
                   <div className="telemetry-kv-row compact">
-                    <dt>Tracked Medical Items:</dt>
-                    <dd>{inventory.length} Items</dd>
+                    <dt>Medication Types:</dt>
+                    <dd>{backend.medications.length} Types</dd>
                   </div>
                   <div className="telemetry-kv-row compact">
-                    <dt>Currently Usable:</dt>
+                    <dt>Total Medication Units:</dt>
+                    <dd>{backend.medications.reduce((sum, m) => sum + m.quantity, 0)} Units</dd>
+                  </div>
+                  <div className="telemetry-kv-row compact">
+                    <dt>Hardware &amp; Supplies:</dt>
+                    <dd>{inventory.length} Types</dd>
+                  </div>
+                  <div className="telemetry-kv-row compact">
+                    <dt>Available Supplies:</dt>
                     <dd>
-                      {inventory.filter((e) => e.available).length} Available
-                    </dd>
-                  </div>
-                  <div className="telemetry-kv-row compact">
-                    <dt>Blood-Pressure Monitor:</dt>
-                    <dd className={!flags[0] ? 'unknown-val' : ''}>
-                      {flags[0] ? 'Available' : 'Unavailable'}
+                      {inventory.filter((e) => e.available).length} / {inventory.length} Ready
                     </dd>
                   </div>
                 </dl>
+
+                <div className="inv-readiness-block">
+                  <span className="micro-label">DIAGNOSTIC DEVICES</span>
+                  <ul className="inv-equip-mini">
+                    {inventory
+                      .filter((e) => e.category !== 'Documentation')
+                      .map((e) => (
+                        <li key={e.name}>
+                          <span>{e.name}</span>
+                          <span className={e.available ? 'ok-txt' : 'unknown-val'}>
+                            {e.available ? 'Ready' : 'Offline'}
+                          </span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
               </aside>
             </div>
           </div>
         )}
+
+        <VoiceAssistant crew={crew.id} onNavigate={(target) => go(({ dashboard: 0, crew: 0, trends: 0, investigation: 2, inventory: 4, reports: 5, research: 0, settings: 0 } as const)[target])} />
 
         <footer>
           <span>MEDNAV · ASTRONAUT HEALTH MONITORING</span>
@@ -374,7 +517,29 @@ function CheckIn({
   const [review, setReview] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
-  const [saving,setSaving]=useState(false);
+  const [syncedNotice, setSyncedNotice] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const syncSensors = () => {
+    setHr(crew.hr?.toString() ?? '');
+    setSleep(crew.sleep?.toString() ?? '');
+    setRad(crew.radiationDailyMsv?.toString() ?? '');
+    setAred(crew.countermeasureMin?.toString() ?? '');
+    setMass(crew.bodyMassKg?.toString() ?? '');
+    setSyncedNotice(true);
+  };
+
+  const stepValue = (
+    val: string,
+    setter: (v: string) => void,
+    delta: number,
+    min = 0,
+    decimals = 0
+  ) => {
+    const base = val === '' ? 0 : Number(val);
+    const next = Math.max(min, Number((base + delta).toFixed(decimals)));
+    setter(String(next));
+  };
 
   const draft: Crew = {
     ...crew,
@@ -450,14 +615,47 @@ function CheckIn({
                 setReview(true);
               }}
             >
+              {/* Confirm-First Quick-Action Bar */}
+              <div className="checkin-quick-bar">
+                <button
+                  type="button"
+                  className="quick-nominal-btn"
+                  onClick={() => {
+                    setSymptoms([]);
+                    setError('');
+                    if (Boolean(sys) !== Boolean(dia)) {
+                      setSys('');
+                      setDia('');
+                    }
+                    setReview(true);
+                  }}
+                >
+                  <ShieldCheck size={16} />
+                  <span>All Nominal · No Symptoms</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="hairline-pill-btn"
+                  onClick={syncSensors}
+                >
+                  <RefreshCw size={14} />
+                  <span>
+                    {syncedNotice ? 'Sensors Synced' : 'Sync Station Sensors'}
+                  </span>
+                </button>
+              </div>
+
               <VoiceCheckIn
                 onApply={(parsed) => {
                   if (parsed.clearSymptoms) {
                     setSymptoms([]);
                   } else if (parsed.symptoms && parsed.symptoms.length > 0) {
                     setSymptoms(parsed.symptoms);
-                  } else if(parsed.removeSymptoms?.length) {
-                    setSymptoms(previous=>previous.filter(s=>!parsed.removeSymptoms!.includes(s)));
+                  } else if (parsed.removeSymptoms?.length) {
+                    setSymptoms((previous) =>
+                      previous.filter((s) => !parsed.removeSymptoms!.includes(s))
+                    );
                   }
                   if (parsed.hr !== undefined && parsed.hr !== null) {
                     setHr(parsed.hr);
@@ -476,16 +674,16 @@ function CheckIn({
 
               <fieldset>
                 <div className="fieldset-header">
-                  <legend>Reported Symptoms</legend>
-                  {symptoms.length > 0 && (
-                    <button
-                      type="button"
-                      className="hairline-pill-btn"
-                      onClick={() => setSymptoms([])}
-                    >
-                      <RotateCcw size={13} /> Clear
-                    </button>
-                  )}
+                  <legend>1 · Symptoms (Tap to Toggle)</legend>
+                  <button
+                    type="button"
+                    className={`hairline-pill-btn ${
+                      symptoms.length === 0 ? 'active' : ''
+                    }`}
+                    onClick={() => setSymptoms([])}
+                  >
+                    None Reported
+                  </button>
                 </div>
                 <div className="symptom-options">
                   {symptomOptions.map((s) => (
@@ -508,62 +706,189 @@ function CheckIn({
               </fieldset>
 
               <div className="vitals-section-head">
-                <strong>Vital Signs, Space Radiation &amp; Microgravity</strong>
-                <span>Unavailable measurements remain Unknown</span>
+                <strong>2 · Sensor Telemetry &amp; Manual Measurements</strong>
+                <span>Confirm synced values or mark Unknown</span>
               </div>
 
               <div className="form-grid">
                 {[
-                  ['Heart rate (bpm)', hr, setHr],
-                  ['Sleep (hours)', sleep, setSleep],
-                  ['Systolic (mmHg)', sys, setSys],
-                  ['Diastolic (mmHg)', dia, setDia],
-                  ['Space radiation (mSv/day)', rad, setRad],
-                  ['Microgravity exercise ARED (min)', ared, setAred],
-                  ['Body mass SLAMMD (kg)', mass, setMass],
-                ].map(([label, v, change], i) => {
-                  const isUnknown = (v as string) === '';
+                  {
+                    id: 0,
+                    label: 'Heart rate (bpm)',
+                    val: hr,
+                    set: setHr,
+                    step: 1,
+                    min: 1,
+                    decimals: 0,
+                    source: 'WEARABLE',
+                  },
+                  {
+                    id: 1,
+                    label: 'Sleep (hours)',
+                    val: sleep,
+                    set: setSleep,
+                    step: 0.5,
+                    min: 0,
+                    decimals: 1,
+                    source: 'WEARABLE',
+                  },
+                  {
+                    id: 4,
+                    label: 'Space radiation (mSv/day)',
+                    val: rad,
+                    set: setRad,
+                    step: 0.05,
+                    min: 0.01,
+                    decimals: 2,
+                    source: 'DOSIMETER',
+                  },
+                  {
+                    id: 5,
+                    label: 'ARED exercise (min)',
+                    val: ared,
+                    set: setAred,
+                    step: 10,
+                    min: 0,
+                    decimals: 0,
+                    source: 'STATION',
+                  },
+                  {
+                    id: 6,
+                    label: 'Body mass SLAMMD (kg)',
+                    val: mass,
+                    set: setMass,
+                    step: 0.2,
+                    min: 1,
+                    decimals: 1,
+                    source: 'STATION',
+                  },
+                ].map((f) => {
+                  const isUnknown = f.val === '';
                   return (
                     <div
                       className={`field-card ${isUnknown ? 'is-unknown' : ''}`}
-                      key={label as string}
+                      key={f.label}
                     >
                       <div className="field-card-head">
-                        <label htmlFor={`field-${i}`}>{label as string}</label>
-                        <button
-                          type="button"
-                          className="unknown-option"
-                          aria-pressed={isUnknown}
-                          disabled={live&&i>=4}
-                          onClick={() => {
-                            if (i === 2 || i === 3) {
-                              setSys('');
-                              setDia('');
-                            } else {
-                              (change as (v: string) => void)('');
-                            }
-                          }}
-                        >
-                          Unknown
-                        </button>
+                        <label htmlFor={`field-${f.id}`}>{f.label}</label>
+                        <div className="field-badge-group">
+                          <span
+                            className={`source-chip ${
+                              isUnknown ? 'unknown' : 'sensor'
+                            }`}
+                          >
+                            {isUnknown ? 'UNKNOWN' : f.source}
+                          </span>
+                          <button
+                            type="button"
+                            className="unknown-option"
+                            aria-pressed={isUnknown}
+                            disabled={live && f.id >= 4}
+                            onClick={() => f.set('')}
+                          >
+                            Unknown
+                          </button>
+                        </div>
                       </div>
-                      <input
-                        id={`field-${i}`}
-                        readOnly={live&&i>=4}
-                        title={live&&i>=4?'Illustrative only: no approved persistence contract.':undefined}
-                        type="number"
-                        min={i===2||i===3?1:i === 1 || i === 5 ? 0 : 0.01}
-                        max={i === 1 ? 24 : undefined}
-                        step={i===2||i===3?'1':'any'}
-                        value={v as string}
-                        placeholder="Unknown"
-                        onChange={(e) =>
-                          (change as (v: string) => void)(e.target.value)
-                        }
-                      />
+                      <div className="field-stepper-input">
+                        <input
+                          id={`field-${f.id}`}
+                          readOnly={live && f.id >= 4}
+                          title={
+                            live && f.id >= 4
+                              ? 'Illustrative only: no approved persistence contract.'
+                              : undefined
+                          }
+                          type="number"
+                          min={f.min}
+                          max={f.id === 1 ? 24 : undefined}
+                          step="any"
+                          value={f.val}
+                          placeholder="Unknown"
+                          onChange={(e) => f.set(e.target.value)}
+                        />
+                        <div className="field-step-actions">
+                          <button
+                            type="button"
+                            className="field-step-btn"
+                            disabled={live && f.id >= 4}
+                            aria-label={`Decrease ${f.label}`}
+                            onClick={() =>
+                              stepValue(f.val, f.set, -f.step, f.min, f.decimals)
+                            }
+                          >
+                            −
+                          </button>
+                          <button
+                            type="button"
+                            className="field-step-btn"
+                            disabled={live && f.id >= 4}
+                            aria-label={`Increase ${f.label}`}
+                            onClick={() =>
+                              stepValue(f.val, f.set, f.step, f.min, f.decimals)
+                            }
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
+
+                {/* Manual Blood Pressure Pair Card */}
+                <div
+                  className={`field-card bp-pair-card ${
+                    !sys && !dia ? 'is-unknown' : ''
+                  }`}
+                >
+                  <div className="field-card-head">
+                    <label htmlFor="field-2">Blood pressure (mmHg)</label>
+                    <div className="field-badge-group">
+                      <span
+                        className={`source-chip ${
+                          !sys && !dia ? 'unknown' : 'sensor'
+                        }`}
+                      >
+                        {!sys && !dia ? 'UNKNOWN' : 'MANUAL'}
+                      </span>
+                      <button
+                        type="button"
+                        className="unknown-option"
+                        aria-pressed={!sys && !dia}
+                        onClick={() => {
+                          setSys('');
+                          setDia('');
+                        }}
+                      >
+                        Unknown
+                      </button>
+                    </div>
+                  </div>
+                  <div className="bp-dual-inputs">
+                    <input
+                      id="field-2"
+                      type="number"
+                      min={1}
+                      step="any"
+                      value={sys}
+                      placeholder="Systolic"
+                      aria-label="Systolic (mmHg)"
+                      onChange={(e) => setSys(e.target.value)}
+                    />
+                    <span className="bp-slash">/</span>
+                    <input
+                      id="field-3"
+                      type="number"
+                      min={1}
+                      step="any"
+                      value={dia}
+                      placeholder="Diastolic"
+                      aria-label="Diastolic (mmHg)"
+                      onChange={(e) => setDia(e.target.value)}
+                    />
+                  </div>
+                </div>
               </div>
 
               {error && (
@@ -590,12 +915,102 @@ function CheckIn({
           <Observation crew={draft} />
           <div className="sheet-divider" />
           <p className="sheet-footnote">
-            Missing measurements are preserved explicitly as <b>Unknown</b> and
-            never assumed normal.
+            Missing values remain <b>Unknown</b> and are never assumed normal.
           </p>
         </aside>
       </div>
     </div>
+  );
+}
+
+function MedicationInventoryRow({
+  med,
+  busy,
+  onUpdate,
+}: {
+  med: MedicationStockDTO;
+  busy: boolean;
+  onUpdate: (quantity: number) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draftQty, setDraftQty] = useState(String(med.quantity));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraftQty(String(med.quantity));
+  }, [med.quantity]);
+
+  const commit = async () => {
+    const parsed = Number(draftQty);
+    const safe = Number.isFinite(parsed) ? Math.max(0, Math.min(5000, Math.round(parsed))) : med.quantity;
+    setSaving(true);
+    try {
+      await onUpdate(safe);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <article className="equipment-hairline-row inv-med-inventory-row">
+      <div className="equip-row-left">
+        <strong>{med.name}</strong>
+        <span>
+          <em className={med.quantity > 0 ? 'ok-txt' : 'unknown-val'}>
+            {med.quantity} {med.unit} remaining
+          </em>{' '}
+          · Pre-flight kit ({med.protocol_ref})
+        </span>
+      </div>
+      <div className="inv-med-manual-controls">
+        {editing ? (
+          <>
+            <input
+              type="number"
+              min={0}
+              max={5000}
+              aria-label={`Quantity for ${med.name}`}
+              value={draftQty}
+              onChange={(e) => setDraftQty(e.target.value)}
+            />
+            <button
+              type="button"
+              className="hairline-pill-btn active"
+              disabled={busy || saving || draftQty === ''}
+              aria-label={`Save ${med.name}`}
+              onClick={() => void commit()}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              className="hairline-pill-btn"
+              disabled={saving}
+              onClick={() => {
+                setDraftQty(String(med.quantity));
+                setEditing(false);
+              }}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="hairline-pill-btn"
+            disabled={busy || saving}
+            aria-label={`Edit ${med.name}`}
+            onClick={() => {
+              setDraftQty(String(med.quantity));
+              setEditing(true);
+            }}
+          >
+            Edit
+          </button>
+        )}
+      </div>
+    </article>
   );
 }
 

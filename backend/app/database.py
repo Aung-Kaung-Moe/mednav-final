@@ -38,9 +38,68 @@ class InventoryRow(Base):
     available: Mapped[bool] = mapped_column(Boolean)
 
 
+class FollowUpRow(Base):
+    """User-recorded workflow documentation, never a treatment/outcome record."""
+    __tablename__ = "follow_up_events"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    astronaut_id: Mapped[str] = mapped_column(ForeignKey("astronauts.id"), index=True)
+    check_in_id: Mapped[str] = mapped_column(ForeignKey("check_ins.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String)
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    provenance: Mapped[str]
+    synthetic: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class SeedVersion(Base):
     __tablename__ = "seed_versions"
     id: Mapped[str] = mapped_column(String, primary_key=True)
+
+
+class MissionConfigRow(Base):
+    """Synthetic mission context (crew count, remaining days, comms mode)."""
+
+    __tablename__ = "mission_config"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    crew_count: Mapped[int] = mapped_column(Integer)
+    remaining_days: Mapped[int] = mapped_column(Integer)
+    communication_mode: Mapped[str] = mapped_column(String, default="online")
+    mission_label: Mapped[str] = mapped_column(String, default="Orbital Demo · Synthetic Mission")
+
+
+class MedicationStockRow(Base):
+    """Synthetic onboard medication inventory for rationing calculations."""
+
+    __tablename__ = "medication_stock"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str]
+    category: Mapped[str]
+    unit: Mapped[str]
+    quantity: Mapped[int] = mapped_column(Integer)
+    default_quantity: Mapped[int] = mapped_column(Integer)
+    max_daily_dose: Mapped[int] = mapped_column(Integer)
+    standard_course_days: Mapped[int] = mapped_column(Integer)
+    reserve_per_crew_30d: Mapped[int] = mapped_column(Integer)
+    contraindications: Mapped[str]
+    protocol_ref: Mapped[str]
+
+
+class InvestigationSessionRow(Base):
+    """Persisted multi-turn iterative investigation session."""
+
+    __tablename__ = "investigation_sessions"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    astronaut_id: Mapped[str] = mapped_column(ForeignKey("astronauts.id"), index=True)
+    check_in_id: Mapped[str] = mapped_column(ForeignKey("check_ins.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String)
+    communication_mode: Mapped[str] = mapped_column(String, default="online")
+    answers: Mapped[dict] = mapped_column(JSON)
+    turns: Mapped[list] = mapped_column(JSON)
+    dispensed: Mapped[bool] = mapped_column(Boolean, default=False)
+    dispensed_medication_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    dispensed_units: Mapped[int] = mapped_column(Integer, default=0)
 
 
 def create_database(url: str):

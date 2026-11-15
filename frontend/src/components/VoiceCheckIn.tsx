@@ -21,7 +21,8 @@ type Props = {
 export function parseTranscriptToCheckIn(text: string): ParsedVoiceCheckIn {
   const numbers:Record<string,number>={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
   const words=Object.keys(numbers).concat('hundred','point').join('|');
-  const lower=text.toLowerCase().replace(new RegExp(`\\b(?:${words})(?:[ -]+(?:and[ -]+)?(?:${words}))*\\b`,'g'),phrase=>{
+  const prepared=text.toLowerCase().replace(/\bheart-rate\b/g,'heart rate').replace(/\bb\.p\.\b/g,'bp').replace(/\band a half\b/g,'.5').replace(/\bslash\b/g,'/');
+  const lower=prepared.replace(new RegExp(`\\b(?:${words})(?:[ -]+(?:and[ -]+)?(?:${words}))*\\b`,'g'),phrase=>{
     const [whole,decimal,...extra]=phrase.replace(/ and /g,' ').split(' point ');
     const tokens=whole.split(/[ -]+/);
     const small=(parts:string[])=>parts.length===0?0:parts.length===1?numbers[parts[0]]:parts.length===2&&numbers[parts[0]]>=20&&numbers[parts[0]]%10===0&&numbers[parts[1]]>0&&numbers[parts[1]]<10?numbers[parts[0]]+numbers[parts[1]]:undefined;
@@ -44,12 +45,25 @@ export function parseTranscriptToCheckIn(text: string): ParsedVoiceCheckIn {
     const matched = symptomOptions.filter((sym) => {
       if(denied.includes(sym))return false;
       const s = sym.toLowerCase();
+      if (s === 'headache') {
+        return /\b(headache|head ache|headaches|migraine)\b/.test(lower);
+      }
+      if (s === 'dizziness') {
+        return /\b(dizziness|dizzy|dizzyness|lightheaded|vertigo)\b/.test(lower);
+      }
+      if (s === 'fatigue') {
+        return /\b(fatigue|fatigued|tired|exhausted|exhaustion)\b/.test(lower);
+      }
+      if (s === 'nausea') {
+        return /\b(nausea|nauseous|queasy)\b/.test(lower);
+      }
       if (s === 'muscle discomfort') {
         return (
           lower.includes('muscle discomfort') ||
           lower.includes('muscle ache') ||
           lower.includes('muscle pain') ||
-          lower.includes('soreness')
+          lower.includes('soreness') ||
+          lower.includes('muscle sore')
         );
       }
       return lower.includes(s);
@@ -210,7 +224,10 @@ export function VoiceCheckIn({ onApply }: Props) {
       };
 
       source.connect(processor);
-      processor.connect(ctx.destination);
+      const silentGain = ctx.createGain();
+      silentGain.gain.value = 0;
+      processor.connect(silentGain);
+      silentGain.connect(ctx.destination);
 
       setRecording(true);
       timerRef.current = window.setInterval(() => {
