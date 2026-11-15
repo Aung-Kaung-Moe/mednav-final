@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { investigationApi, useBackend } from './api';
+import React, { useEffect, useState } from 'react';
+import { useBackend } from './api';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowUpRight,
@@ -17,50 +17,14 @@ import {
 import { MissionConsole } from './components/MissionConsole';
 import { IncidentReportPage } from './components/IncidentReportPage';
 import { IterativeInvestigation } from './components/IterativeInvestigation';
-import { FollowUpPanel } from './components/FollowUpPanel';
+import { GlobalCrewAlertBanner, MedicalInventoryView, useGlobalCrewAlertScanner } from './InventoryAndGlobalAlert';
 import VoiceAssistant from './voice/VoiceAssistant';
 import { configureVoiceDemo } from './voice/currentDemo';
 import type { InvestigationResponse } from './voice/types';
 import { Panel } from './components/ui';
 import { crews, symptomOptions, type Crew } from './data/fixtures';
-import { getMedicationPurpose } from './data/medicalReferences';
-import type { CrewProactiveAlertDTO, MedicationStockDTO } from './types/api';
 import './styles.css';
 import './subpages.css';
-
-function playDoubleAlertSound(): void {
-  try {
-    const win = window as Window & {
-      webkitAudioContext?: typeof AudioContext;
-      __mednavAlertCount?: number;
-    };
-    win.__mednavAlertCount = (win.__mednavAlertCount ?? 0) + 2;
-    const AudioCtx = window.AudioContext || win.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    if (ctx.state === 'suspended') {
-      void ctx.resume();
-    }
-    const playTone = (startOffset: number, freq: number) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + startOffset);
-      gain.gain.setValueAtTime(0.001, ctx.currentTime + startOffset);
-      gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + startOffset + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startOffset + 0.16);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + startOffset);
-      osc.stop(ctx.currentTime + startOffset + 0.17);
-    };
-    // Two alert tones to notify all crew onboard when medication stock is manually edited
-    playTone(0.02, 880);
-    playTone(0.26, 988);
-  } catch {
-    // Audio playback unavailable in restricted environment
-  }
-}
 
 const navItems = [
   { label: 'Dashboard', page: 0, icon: LayoutDashboard },
@@ -79,22 +43,14 @@ function App() {
   const backend=useBackend(crewId,page===0);
   const {profiles,inventory,flags}=backend;
   const [mobile, setMobile] = useState(false);
-  const [inventoryAlert, setInventoryAlert] = useState<string | null>(null);
-  const [inventorySearch, setInventorySearch] = useState('');
-  const [manageStock, setManageStock] = useState(false);
-  const [crewAlerts, setCrewAlerts] = useState<CrewProactiveAlertDTO[]>([]);
-  const alertTimerRef = useRef<number | null>(null);
+  const { globalCrewAlerts, scheduleCheckInAlertScan } = useGlobalCrewAlertScanner(backend.live);
+  const saveCheckIn = async (next: Crew) => {
+    await backend.save(next);
+    scheduleCheckInAlertScan();
+  };
   const [voiceResponse, setVoiceResponse] = useState<InvestigationResponse | null>(null);
   const setFlags = (update: boolean[] | ((f: boolean[]) => boolean[])) =>
     backend.changeFlags(typeof update === 'function' ? update(flags) : update);
-
-  useEffect(() => {
-    return () => {
-      if (alertTimerRef.current !== null) {
-        window.clearTimeout(alertTimerRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (backend.initialized && profiles.length && !profiles.some((c) => c.id === crewId)) {
@@ -102,24 +58,13 @@ function App() {
     }
   }, [backend.initialized, profiles, crewId]);
 
-  useEffect(() => {
-    if (!backend.live || (page !== 2 && page !== 4)) return;
-    let active = true;
-    const refresh = () => void investigationApi.getCrewAlerts()
-      .then((alerts) => { if (active) setCrewAlerts(alerts.filter((a) => a.needs_investigation)); })
-      .catch(() => { if (active) setCrewAlerts([]); });
-    refresh();
-    const timer = window.setInterval(refresh, 15000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [backend.live, page, backend.record?.id]);
-
   const crew = profiles.find((c) => c.id === crewId) ?? profiles[0];
 
   configureVoiceDemo({
     profiles,
     inventory,
     save: (next) => {
-      void backend.save(next);
+      void saveCheckIn(next);
     },
   });
 
@@ -240,6 +185,11 @@ function App() {
         </header>
 
         <main id="main">
+          <GlobalCrewAlertBanner
+            alerts={globalCrewAlerts}
+            activeCrewId={crewId}
+            onSelectAndInvestigate={(id) => { handleSelectCrew(id); go(2); }}
+          />
         {backend.live&&backend.busy&&<p role="status" className="sheet-footnote">Evaluating…</p>}
         {backend.error&&<p role="alert" className="error">{backend.error} <button className="hairline-pill-btn" onClick={backend.retry}>Retry backend</button></p>}
         {isConsolePage && (!backend.live || backend.result!==null || (page===0&&backend.initialized)) && (
@@ -273,7 +223,7 @@ function App() {
           <CheckIn
             key={crew.id}
             crew={crew}
-            save={backend.save}
+            save={saveCheckIn}
             investigate={() => go(2)}
             onBack={() => go(0)}
             live={backend.live}
@@ -281,162 +231,22 @@ function App() {
         )}
 
         {page === 2 && (!backend.live||backend.initialized) && (
-          <>
-            <IterativeInvestigation
-              live={backend.live}
-              crew={crew}
-              liveRecord={backend.record}
-              inventory={inventory}
-              onStockChanged={() => backend.refreshMissionData()}
-              go={go}
-            />
-            {backend.live&&backend.result&&backend.savedId&&<div className="investigation-followup"><FollowUpPanel key={`${crew.id}:${backend.savedId}`} crewId={crew.id} checkInId={backend.savedId}/></div>}
-          </>
+          <IterativeInvestigation
+            key={crew.id}
+            live={backend.live}
+            crew={crew}
+            liveRecord={backend.record}
+            onStockChanged={backend.refreshMissionData}
+            go={go}
+          />
         )}
 
-        {page === 4 && (!backend.live||backend.initialized) && (
-          <div className="space-subpage inventory-page">
-            <div className="subpage-top-bar">
-              <button
-                type="button"
-                className="hairline-pill-btn"
-                onClick={() => go(0)}
-              >
-                Overview
-              </button>
-              <div className="wide-planetary-label">
-                M E D I C A L &nbsp; I N V E N T O R Y
-              </div>
-              <button
-                type="button"
-                className="hairline-pill-btn"
-                onClick={() => go(2)}
-              >
-                Investigation <ArrowUpRight size={14} />
-              </button>
-            </div>
-
-            <div className="asymmetric-workspace-grid">
-              <section className="left-telemetry-column">
-                <h1 className="section-sans-headline">
-                  Medical inventory
-                </h1>
-                <p className="subpage-lede">Review onboard medication stock and medical readiness.</p>
-
-                {inventoryAlert && (
-                  <div
-                    role="status"
-                    data-testid="crew-alert-banner"
-                    data-beeps="2"
-                    className="inv-crew-alert-banner"
-                  >
-                    <strong>Crew Alert (2× audio beep):</strong> {inventoryAlert}
-                  </div>
-                )}
-
-                {crewAlerts.length > 0 && (
-                  <div role="status" className="inv-crew-alert-banner">
-                    <strong>Crew needing investigation</strong>
-                    <div className="inv-crew-alert-actions">
-                      {crewAlerts.map((alert) => (
-                        <button key={alert.astronaut_id} type="button" className="hairline-pill-btn"
-                          onClick={() => { handleSelectCrew(alert.astronaut_id); go(2); }}>
-                          {alert.astronaut_id}: {alert.summary_tags.join(' · ')}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="inventory-toolbar inv-inventory-toolbar-row">
-                  <label className="inv-search-label">Search medications
-                    <input type="search" placeholder="Filter by name…" value={inventorySearch}
-                      onChange={(event) => setInventorySearch(event.target.value)} />
-                  </label>
-                  <button type="button" className={`hairline-pill-btn${manageStock ? ' active' : ''}`}
-                    aria-pressed={manageStock} onClick={() => setManageStock((value) => !value)}>
-                    {manageStock ? 'Done Adjusting' : 'Adjust Stock'}
-                  </button>
-                </div>
-
-                {backend.medications.length > 0 && (
-                  <div className="inv-med-inventory-section">
-                    <div className="hairline-telemetry-list">
-                      {backend.medications
-                        .filter((m) => m.name.toLowerCase().includes(inventorySearch.trim().toLowerCase()))
-                        .map((m) => (
-                          <MedicationInventoryRow
-                            key={m.id}
-                            med={m}
-                            busy={backend.busy}
-                            manageStock={manageStock}
-                            onUpdate={async (qty) => {
-                              const prev = m.quantity;
-                              await backend.updateMedicationQuantity(m.id, qty);
-                              playDoubleAlertSound();
-                              setInventoryAlert(
-                                `${m.name} manually updated (${prev} → ${qty} ${m.unit}).`
-                              );
-                              if (alertTimerRef.current !== null) {
-                                window.clearTimeout(alertTimerRef.current);
-                              }
-                              alertTimerRef.current = window.setTimeout(() => {
-                                setInventoryAlert(null);
-                                alertTimerRef.current = null;
-                              }, 1000);
-                            }}
-                          />
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-              </section>
-
-              <aside className="right-frosted-sheet inv-readiness-panel">
-                <div className="inv-readiness-head">
-                  <span className="micro-label">ONBOARD MEDICAL READINESS</span>
-                </div>
-
-                <dl className="hairline-telemetry-list compact-list">
-                  <div className="telemetry-kv-row compact">
-                    <dt>Medication Types:</dt>
-                    <dd>{backend.medications.length} Types</dd>
-                  </div>
-                  <div className="telemetry-kv-row compact">
-                    <dt>Total Medication Units:</dt>
-                    <dd>{backend.medications.reduce((sum, m) => sum + m.quantity, 0)} Units</dd>
-                  </div>
-                  <div className="telemetry-kv-row compact">
-                    <dt>Hardware &amp; Supplies:</dt>
-                    <dd>{inventory.length} Types</dd>
-                  </div>
-                  <div className="telemetry-kv-row compact">
-                    <dt>Available Supplies:</dt>
-                    <dd>
-                      {inventory.filter((e) => e.available).length} / {inventory.length} Ready
-                    </dd>
-                  </div>
-                </dl>
-
-                <div className="inv-readiness-block">
-                  <span className="micro-label">DIAGNOSTIC DEVICES</span>
-                  <ul className="inv-equip-mini">
-                    {inventory
-                      .filter((e) => e.category !== 'Documentation')
-                      .map((e) => (
-                        <li key={e.name}>
-                          <span>{e.name}</span>
-                          <span className={e.available ? 'ok-txt' : 'unknown-val'}>
-                            {e.available ? 'Ready' : 'Offline'}
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              </aside>
-            </div>
-          </div>
+        {page === 4 && (!backend.live || backend.initialized) && (
+          <MedicalInventoryView
+            medications={backend.medications}
+            busy={backend.busy}
+            onUpdateMedicationQuantity={backend.updateMedicationQuantity}
+          />
         )}
 
         <VoiceAssistant crew={crew.id} onNavigate={(target) => go(({ dashboard: 0, crew: 0, trends: 0, investigation: 2, inventory: 4, reports: 5, research: 0, settings: 0 } as const)[target])} />
@@ -848,100 +658,6 @@ function CheckIn({
         </aside>
       </div>
     </div>
-  );
-}
-
-function MedicationInventoryRow({
-  med,
-  busy,
-  manageStock,
-  onUpdate,
-}: {
-  med: MedicationStockDTO;
-  busy: boolean;
-  manageStock: boolean;
-  onUpdate: (quantity: number) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draftQty, setDraftQty] = useState(String(med.quantity));
-  const [saving, setSaving] = useState(false);
-  const purpose = getMedicationPurpose(med.id);
-
-  useEffect(() => {
-    setDraftQty(String(med.quantity));
-  }, [med.quantity]);
-
-  const commit = async () => {
-    const parsed = Number(draftQty);
-    const safe = Number.isFinite(parsed) ? Math.max(0, Math.min(5000, Math.round(parsed))) : med.quantity;
-    setSaving(true);
-    try {
-      await onUpdate(safe);
-      setEditing(false);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <article className="equipment-hairline-row inv-med-inventory-row">
-      <div className="equip-row-left">
-        <strong>{med.name}</strong>
-        <span>
-          <em className={med.quantity > 0 ? 'ok-txt' : 'unknown-val'}>
-            {med.quantity} {med.unit} remaining
-          </em>{' '}
-          · {purpose ?? `Pre-flight kit (${med.protocol_ref})`}
-        </span>
-      </div>
-      {manageStock && <div className="inv-med-manual-controls">
-        {editing ? (
-          <>
-            <input
-              type="number"
-              min={0}
-              max={5000}
-              aria-label={`Quantity for ${med.name}`}
-              value={draftQty}
-              onChange={(e) => setDraftQty(e.target.value)}
-            />
-            <button
-              type="button"
-              className="hairline-pill-btn active"
-              disabled={busy || saving || draftQty === ''}
-              aria-label={`Save ${med.name}`}
-              onClick={() => void commit()}
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              type="button"
-              className="hairline-pill-btn"
-              disabled={saving}
-              onClick={() => {
-                setDraftQty(String(med.quantity));
-                setEditing(false);
-              }}
-            >
-              Cancel
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="hairline-pill-btn"
-            disabled={busy || saving}
-            aria-label={`Edit ${med.name}`}
-            onClick={() => {
-              setDraftQty(String(med.quantity));
-              setEditing(true);
-            }}
-          >
-            Edit
-          </button>
-        )}
-      </div>}
-    </article>
   );
 }
 
