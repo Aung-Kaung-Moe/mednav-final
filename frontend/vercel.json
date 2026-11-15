@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/mednav-voice/:path*",
+      "destination": "https://mednav-final-1.onrender.com/api/v1/voice/:path*"
+    },
+    {
+      "source": "/piper/:path*",
+      "destination": "https://mednav-final-2.onrender.com/:path*"
+    }
+  ]
+}
