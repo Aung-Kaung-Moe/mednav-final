@@ -110,7 +110,7 @@ export class OfflineRecognizer {
     this.controller = controller;
     this.busy = true;
     try {
-      const result = await fetch(`${VOICE_BASE}/transcribe?segment_mode=true', {
+      const result = await fetch(`${VOICE_BASE}/transcribe?segment_mode=true`, {
         method: 'POST', headers: { 'Content-Type': 'audio/wav' },
         body: wav(samples, this.context?.sampleRate ?? 16000), signal: controller.signal,
       });
