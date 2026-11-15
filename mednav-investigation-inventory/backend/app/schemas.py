@@ -57,6 +57,35 @@ class HistoryPoint(Measurements):
     provenance: str
 
 
+class FollowUpCreate(Model):
+    astronaut_id: Annotated[str, Field(strict=True, min_length=1, max_length=100)]
+    check_in_id: Annotated[str, Field(strict=True, min_length=1, max_length=200)]
+    event_type: Literal["review_requested", "note_recorded", "action_recorded"]
+    note: Annotated[str, Field(strict=True, min_length=1, max_length=2000)] | None = None
+
+    @field_validator("note")
+    @classmethod
+    def clean_note(cls, value):
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("Note cannot be blank")
+        return value
+
+    @model_validator(mode="after")
+    def require_note_content(self):
+        if self.event_type == "note_recorded" and self.note is None:
+            raise ValueError("A note_recorded event requires a note")
+        return self
+
+
+class FollowUpEvent(FollowUpCreate):
+    id: str
+    recorded_at: datetime
+    provenance: str
+    synthetic: Literal[True] = True
+
+
 class InventoryItem(Model):
     name: str
     category: str

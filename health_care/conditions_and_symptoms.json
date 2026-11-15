@@ -1,0 +1,278 @@
+{
+  "schema_version": "1.0",
+  "offline_ready": true,
+  "conditions": {
+    "autonomic_tachycardia_diaphoresis": {
+      "title": "Urgent Autonomic Stress / Acute Tachycardia with Cold Sweats",
+      "plain_summary": "Heart rate sharply above personal resting baseline combined with cold sweats, clammy skin, dizziness, or chest discomfort signals acute autonomic stress, severe volume depletion, or potential cardiovascular distress.",
+      "trigger_vitals_and_symptoms": [
+        "Resting heart rate >= 120 bpm or +45 bpm above personal baseline",
+        "Cold sweats / clammy skin (diaphoresis)",
+        "Dizziness, lightheadedness, headache, or chest tightness"
+      ],
+      "immediate_actions": [
+        "Stop exertion immediately and rest seated or lying flat.",
+        "Drink Oral Rehydration Salts (ORS) slowly in 500 mL water if alert and without vomiting.",
+        "Avoid Ibuprofen/NSAIDs while orthostatic or potentially dehydrated.",
+        "Measure blood pressure and re-check heart rate after 10 to 15 minutes.",
+        "Alert Crew Medical Officer / Flight Surgeon urgently if chest pain, trouble breathing, fainting, or confusion occurs."
+      ],
+      "preferred_medication_id": "oral_rehydration_salts",
+      "avoid_medication_ids": ["ibuprofen_400mg"],
+      "urgency": "high",
+      "sources": [
+        {
+          "org": "Mayo Clinic",
+          "citation": "Mayo Clinic — Dehydration, Orthostatic Hypotension & Tachycardia Emergency Signs",
+          "url": "https://www.mayoclinic.org/diseases-conditions/orthostatic-hypotension/symptoms-causes/syc-20352548"
+        },
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus — Cold Sweats, Rapid Heart Rate & Chest Pain Urgent Evaluation",
+          "url": "https://medlineplus.gov/heartattack.html"
+        }
+      ]
+    },
+    "dehydration_orthostatic": {
+      "title": "Dehydration & Orthostatic Intolerance",
+      "plain_summary": "Low fluid volume reduces blood pressure when upright and triggers a fast compensatory heart rate (tachycardia), dizziness, headache, and fatigue.",
+      "trigger_vitals_and_symptoms": [
+        "Elevated resting heart rate above baseline",
+        "Dizziness when standing or changing position",
+        "Low daily fluid intake or thirst",
+        "Fatigue or headache"
+      ],
+      "immediate_actions": [
+        "Rehydrate with Oral Rehydration Salts (ORS) mixed in 500 mL potable water.",
+        "Change posture slowly and avoid sudden standing.",
+        "Avoid Ibuprofen/NSAIDs until fluid balance and kidney perfusion recover."
+      ],
+      "preferred_medication_id": "oral_rehydration_salts",
+      "avoid_medication_ids": ["ibuprofen_400mg"],
+      "urgency": "high",
+      "sources": [
+        {
+          "org": "Mayo Clinic",
+          "citation": "Mayo Clinic — Dehydration & Blood Pressure Regulation",
+          "url": "https://www.mayoclinic.org/diseases-conditions/dehydration/symptoms-causes/syc-20354086"
+        },
+        {
+          "org": "NASA ISS Medical Checklist",
+          "citation": "NASA-STD-3001 / ISS Fluid Shift & Post-EVA Rehydration Protocol",
+          "url": "https://standards.nasa.gov"
+        }
+      ]
+    },
+    "febrile_infectious_illness": {
+      "title": "Fever / Possible Infection",
+      "plain_summary": "Elevated temperature (>= 38.0 C) alongside tachycardia, headache, or malaise requires antipyretic stabilization and serial vital tracking.",
+      "trigger_vitals_and_symptoms": [
+        "Body temperature >= 38.0 C",
+        "Elevated resting heart rate",
+        "Headache, fatigue, or chills"
+      ],
+      "immediate_actions": [
+        "Use Acetaminophen 500 mg (gentle on stomach if hydration is low; do not exceed 3,000 mg/24h).",
+        "Re-check temperature every 4 hours and monitor fluids.",
+        "Notify Flight Surgeon if fever >= 38.5 C persists past 24 hours."
+      ],
+      "preferred_medication_id": "acetaminophen_500mg",
+      "avoid_medication_ids": [],
+      "urgency": "high",
+      "sources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus — Acetaminophen Drug Information (Fever & Pain Relief)",
+          "url": "https://medlineplus.gov/druginfo/meds/a681004.html"
+        },
+        {
+          "org": "NASA ISS IFMC",
+          "citation": "NASA-STD-3001 / ISS In-Flight Medical Checklist — Antipyretic Screening",
+          "url": "https://standards.nasa.gov"
+        }
+      ]
+    },
+    "cephalad_tension_headache": {
+      "title": "Tension / Space Fluid-Shift Headache",
+      "plain_summary": "Headache without fever in microgravity frequently stems from cephalad fluid shift, muscle strain, dehydration, or sleep restriction.",
+      "trigger_vitals_and_symptoms": [
+        "Headache without fever (< 37.5 C)",
+        "Mild-to-moderate discomfort or low sleep"
+      ],
+      "immediate_actions": [
+        "For mild headache: rest and hydrate with water first to conserve onboard supplies.",
+        "For bothersome headache: use Acetaminophen 500 mg (preferred when hydration is uncertain) or Ibuprofen 400 mg only with food and full hydration."
+      ],
+      "preferred_medication_id": "acetaminophen_500mg",
+      "avoid_medication_ids": [],
+      "urgency": "moderate",
+      "sources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus — Acetaminophen & Ibuprofen Analgesic Indications & Warnings",
+          "url": "https://medlineplus.gov/druginfo/meds/a681004.html"
+        },
+        {
+          "org": "NASA JSC / FASEB J",
+          "citation": "Wotring, V. E. (2015) · ISS Crew Medication Analysis (PMC4621588)",
+          "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4621588/"
+        }
+      ]
+    },
+    "space_motion_vestibular": {
+      "title": "Space Motion Sickness (SMS) / Vestibular Discomfort",
+      "plain_summary": "Dizziness, vertigo, or nausea worsened by head movement or floating turns indicates vestibular sensory mismatch.",
+      "trigger_vitals_and_symptoms": [
+        "Dizziness or nausea triggered by head movement",
+        "Balance discomfort in microgravity"
+      ],
+      "immediate_actions": [
+        "Stabilize head motion briefly and maintain gentle hydration.",
+        "Meclizine 25 mg treats vestibular dizziness (caution: causes drowsiness before safety-critical duties); Ondansetron 8 mg ODT provides non-sedating nausea relief."
+      ],
+      "preferred_medication_id": "meclizine_25mg",
+      "avoid_medication_ids": ["ibuprofen_400mg"],
+      "urgency": "moderate",
+      "sources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus — Meclizine & Ondansetron Motion Sickness / Nausea Guidance",
+          "url": "https://medlineplus.gov/druginfo/meds/a682548.html"
+        },
+        {
+          "org": "NASA ISS Oral Pack",
+          "citation": "ISS Oral Medication Pack · Space Motion Sickness Protocol",
+          "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4621588/"
+        }
+      ]
+    },
+    "circadian_sleep_deficit": {
+      "title": "Circadian Sleep Deficit / Fatigue",
+      "plain_summary": "Shortened or fragmented sleep cycles elevate daytime tiredness, headache risk, and mild autonomic stress.",
+      "trigger_vitals_and_symptoms": [
+        "Sleep below personal baseline",
+        "Fatigue or disrupted sleep schedule"
+      ],
+      "immediate_actions": [
+        "Keep a dark, quiet sleep station and stop stimulants before rest period.",
+        "If bothersome across multiple cycles, low-dose Melatonin 3 mg 30 to 60 minutes before scheduled sleep helps re-align circadian rhythm."
+      ],
+      "preferred_medication_id": "melatonin_3mg",
+      "avoid_medication_ids": [],
+      "urgency": "low",
+      "sources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus — Melatonin Adult Dosing (0.5–5 mg) & Safety Precautions",
+          "url": "https://medlineplus.gov/druginfo/natural/940.html"
+        },
+        {
+          "org": "NASA ExMC",
+          "citation": "NASA Circadian Entrainment & Sleep Support Protocol",
+          "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4621588/"
+        }
+      ]
+    },
+    "post_exercise_tachycardia": {
+      "title": "Post-Exercise Heart Rate Recovery",
+      "plain_summary": "Elevated heart rate within 45 minutes of ARED or cardiovascular exercise without headache, fever, dizziness, or cold sweats represents normal cardiovascular recovery.",
+      "trigger_vitals_and_symptoms": [
+        "Elevated heart rate right after workout",
+        "No fever, dizziness, nausea, or cold sweats"
+      ],
+      "immediate_actions": [
+        "Rest 15 to 20 minutes and drink water.",
+        "No medication is needed; re-check heart rate after cooldown."
+      ],
+      "preferred_medication_id": null,
+      "avoid_medication_ids": [],
+      "urgency": "low",
+      "sources": [
+        {
+          "org": "NASA-STD-3001",
+          "citation": "NASA Countermeasure ARED Recovery & Hydration Guidance",
+          "url": "https://standards.nasa.gov"
+        }
+      ]
+    },
+    "sans_ocular_shift": {
+      "title": "Ocular / Visual Fluid-Shift Check (SANS)",
+      "plain_summary": "New visual acuity changes in microgravity (especially with cephalad fluid fullness or headache) can signal Spaceflight Associated Neuro-ocular Syndrome (SANS) from headward fluid shift and intracranial pressure changes.",
+      "trigger_vitals_and_symptoms": [
+        "Visual acuity change (near-vision blur or focus shift)",
+        "Cephalad fluid fullness or headache in microgravity"
+      ],
+      "immediate_actions": [
+        "Schedule ocular Amsler grid / ultrasound optic-nerve check and alert the Flight Surgeon / CMO.",
+        "Avoid routine NSAIDs; use Acetaminophen 500 mg only if accompanying headache is bothersome."
+      ],
+      "preferred_medication_id": null,
+      "avoid_medication_ids": ["ibuprofen_400mg"],
+      "urgency": "high",
+      "sources": [
+        {
+          "org": "Ophthalmology / NASA JSC",
+          "citation": "Mader et al. (2011) · Ophthalmology — Microgravity Optic Disc & Visual Shifts (PMID 21840600)",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/21840600/"
+        },
+        {
+          "org": "NASA HRP",
+          "citation": "NASA Human Research Program — Risk of Spaceflight Associated Neuro-ocular Syndrome (SANS)",
+          "url": "https://www.nasa.gov/hrp/risks/"
+        }
+      ]
+    },
+    "musculoskeletal_strain": {
+      "title": "Musculoskeletal / ARED Strain",
+      "plain_summary": "Localized muscle discomfort or soreness without fever or systemic dehydration typically follows resistance exercise (ARED) or EVA suit load.",
+      "trigger_vitals_and_symptoms": [
+        "Muscle discomfort or localized soreness",
+        "Normal body temperature without systemic illness"
+      ],
+      "immediate_actions": [
+        "Rest the strained muscle group and hydrate adequately; take Ibuprofen 400 mg only with food and full hydration (or use Acetaminophen 500 mg if hydration is uncertain)."
+      ],
+      "preferred_medication_id": "ibuprofen_400mg",
+      "avoid_medication_ids": [],
+      "urgency": "moderate",
+      "sources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus / NIH — Ibuprofen Drug Information (Pain & Inflammation)",
+          "url": "https://medlineplus.gov/druginfo/meds/a682159.html"
+        },
+        {
+          "org": "Pharmaceutical Research",
+          "citation": "Eyal et al. (2019) · Spaceflight Analgesic & NSAID Precautions (PMID 31152244)",
+          "url": "https://doi.org/10.1007/s11095-019-2649-9"
+        }
+      ]
+    },
+    "nausea_gi_support": {
+      "title": "Acute Nausea / Gastrointestinal Discomfort",
+      "plain_summary": "Isolated or persistent nausea without fever requires a non-sedating anti-emetic that dissolves orally without requiring large fluid boluses.",
+      "trigger_vitals_and_symptoms": [
+        "Nausea or upset stomach",
+        "No fever"
+      ],
+      "immediate_actions": [
+        "Take Ondansetron 8 mg ODT (dissolves on tongue without water) and sip Oral Rehydration Salts slowly once stomach settles."
+      ],
+      "preferred_medication_id": "ondansetron_8mg",
+      "avoid_medication_ids": ["ibuprofen_400mg"],
+      "urgency": "moderate",
+      "sources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus / NIH — Ondansetron ODT Drug Information",
+          "url": "https://medlineplus.gov/druginfo/meds/a601209.html"
+        },
+        {
+          "org": "NASA JSC / FASEB J",
+          "citation": "Wotring, V. E. (2015) · ISS Crew Anti-Emetic Usage (PMC4621588)",
+          "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4621588/"
+        }
+      ]
+    }
+  }
+}

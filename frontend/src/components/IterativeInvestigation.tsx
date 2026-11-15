@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { investigationApi } from '../api';
 import type { Crew, Equipment } from '../data/fixtures';
-import { getClinicalResourcesForSuggestion } from '../data/medicalReferences';
+import { getClinicalResourcesForSuggestion, getOfflineHealthCareGuide } from '../data/medicalReferences';
 import type {
   InvestigationSessionDTO,
   SavedCheckIn,
@@ -86,13 +86,13 @@ export function IterativeInvestigation({
     void loadLatest();
   }, [loadLatest]);
 
-  const handleAnswer = async (questionId: string, answerValue: string) => {
+  const handleAnswer = async (questionId: string, answerValue: string, includeNumeric = true) => {
     if (!session) return;
     setSubmitting(true);
     setError('');
     try {
       const parsedNum =
-        numericInput.trim() !== '' && Number.isFinite(Number(numericInput))
+        includeNumeric && numericInput.trim() !== '' && Number.isFinite(Number(numericInput))
           ? Number(numericInput)
           : undefined;
       const dto = await investigationApi.submitAnswer(session.id, {
@@ -101,7 +101,9 @@ export function IterativeInvestigation({
         numeric_value: parsedNum,
       });
       setSession(dto);
+      setDaysInput(dto.mission_context.remaining_days);
       setNumericInput('');
+      if (questionId === 'mission_duration_check') await onStockChanged?.();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -204,6 +206,7 @@ export function IterativeInvestigation({
   const alloc = session?.medication_allocation;
   const q = session?.current_question;
   const isCompleted = session?.status === 'completed';
+  const healthCareGuide = getOfflineHealthCareGuide(session?.condition_id, alloc?.medication_id);
 
   return (
     <div
@@ -239,6 +242,9 @@ export function IterativeInvestigation({
         <h1>Health investigation</h1>
         <p>Review the current question, possible causes, and available onboard resources.</p>
       </div>
+      {session?.proactive_alert && session.status === 'in_progress' && (
+        <p role="status" className="inv-crew-alert-banner">{session.proactive_alert}</p>
+      )}
 
       {/* MISSION SUPPLY & TEST SCENARIO STRIP */}
       <section
@@ -387,13 +393,19 @@ export function IterativeInvestigation({
                       {q.numeric_label ?? 'Value'} ({q.numeric_unit ?? ''}):
                       <input
                         type="number"
-                        step="0.1"
-                        placeholder="e.g. 37.1"
+                        step={q.id === 'mission_duration_check' ? 1 : 0.1}
+                        min={q.id === 'mission_duration_check' ? 1 : undefined}
+                        placeholder={q.id === 'mission_duration_check' ? 'e.g. 60' : 'e.g. 37.1'}
                         value={numericInput}
                         onChange={(e) => setNumericInput(e.target.value)}
                       />
                     </label>
                   </div>
+                )}
+
+                {q.id === 'mission_duration_check' && numericInput.trim() !== '' && (
+                  <button type="button" className="hairline-pill-btn" disabled={submitting}
+                    onClick={() => void handleAnswer(q.id, '45')}>Use {numericInput} days</button>
                 )}
 
                 <div className="inv-options-grid">
@@ -403,7 +415,7 @@ export function IterativeInvestigation({
                       type="button"
                       disabled={submitting}
                       className={`inv-option-btn tone-${opt.tone}`}
-                      onClick={() => void handleAnswer(q.id, opt.value)}
+                      onClick={() => void handleAnswer(q.id, opt.value, q.id !== 'mission_duration_check')}
                     >
                       <span>{opt.label}</span>
                       <ArrowRight size={15} className="inv-opt-arrow" />
@@ -439,6 +451,9 @@ export function IterativeInvestigation({
                 <p className="inv-outcome-summary">
                   {session?.assessment_summary}
                 </p>
+                {healthCareGuide?.condition?.immediate_actions[0] && (
+                  <p className="inv-outcome-summary"><strong>Care guidance</strong> {healthCareGuide.condition.immediate_actions[0]}</p>
+                )}
 
                 <div className="inv-allocation-box">
                   <p className="inv-alloc-schedule">

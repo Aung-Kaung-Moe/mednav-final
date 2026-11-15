@@ -192,6 +192,10 @@
 
 /* Investigation: keep the active task and its context at natural height. */
 [data-testid='iterative-investigation'] .inv-mission-strip { margin-bottom: 16px; border-radius: 12px; padding: 10px 14px; }
+.inv-inventory-toolbar-row { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin: 18px 0 14px; flex-wrap: wrap; }
+.inv-search-label { display: grid; gap: 6px; min-width: min(100%, 250px); font-size: 13px; color: #b3c1d0; }
+.inv-search-label input { width: 100%; min-height: 40px; padding: 8px 12px; color: #f8fbff; background: #0b0e13; border: 1px solid #3b434e; border-radius: 7px; }
+.inv-crew-alert-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 [data-testid='iterative-investigation'] .inv-workspace { grid-template-columns: minmax(0,1fr) minmax(270px, 320px); gap: 16px; align-items: start; }
 [data-testid='iterative-investigation'] .inv-question-card,
 [data-testid='iterative-investigation'] .inv-outcome-card { flex: none; padding: 20px; border-radius: 14px; }

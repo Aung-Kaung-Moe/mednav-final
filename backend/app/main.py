@@ -18,6 +18,7 @@ from .database import AstronautRow, Base, CheckInRow, InventoryRow, create_datab
 from .investigation import FixtureAdapter, InvestigationAdapter, UnknownFixture
 from .iterative_investigation import (
     DispenseRequest,
+    CrewProactiveAlertDTO,
     InvestigationSessionDTO,
     MissionContextDTO,
     MissionContextUpdate,
@@ -25,6 +26,7 @@ from .iterative_investigation import (
     SubmitAnswerRequest,
     build_mission_context_dto,
     dispense_session_allocation,
+    get_all_crew_proactive_alerts,
     get_latest_session,
     reset_mission_context,
     start_investigation_session,
@@ -220,6 +222,10 @@ def create_app(database_url: str | None = None, *, adapter: InvestigationAdapter
         except Exception:
             logger.exception("Stable evaluation failed")
             raise HTTPException(500, "Evaluation failed") from None
+
+    @app.get("/api/v1/investigation/crew-alerts", response_model=list[CrewProactiveAlertDTO])
+    def crew_alerts(session: Session = Depends(db)):
+        return get_all_crew_proactive_alerts(session)
 
     @app.get("/api/v1/investigation/mission-context", response_model=MissionContextDTO)
     def get_mission_context(session: Session = Depends(db)):

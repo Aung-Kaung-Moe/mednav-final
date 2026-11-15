@@ -14,6 +14,7 @@ import type {
   MedicalReportDTO,
   ReportSnapshotDTO,
   EarthStatusDTO,
+  CrewProactiveAlertDTO,
 } from './types/api';
 import {displayProfile, recordedProfile} from './types/api';
 export const API = (import.meta as unknown as {env:Record<string,string>}).env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1';
@@ -26,6 +27,7 @@ async function request<T>(path:string, method='GET', body?:unknown, extraHeaders
   return data;
 }
 export const investigationApi = {
+  getCrewAlerts: () => request<CrewProactiveAlertDTO[]>('/investigation/crew-alerts'),
   getMissionContext: () => request<MissionContextDTO>('/investigation/mission-context'),
   updateMissionContext: (patch: {
     crew_count?: number;

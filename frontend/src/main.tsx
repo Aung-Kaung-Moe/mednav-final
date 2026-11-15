@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useBackend } from './api';
+import { investigationApi, useBackend } from './api';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowUpRight,
@@ -23,7 +23,8 @@ import { configureVoiceDemo } from './voice/currentDemo';
 import type { InvestigationResponse } from './voice/types';
 import { Panel } from './components/ui';
 import { crews, symptomOptions, type Crew } from './data/fixtures';
-import type { MedicationStockDTO } from './types/api';
+import { getMedicationPurpose } from './data/medicalReferences';
+import type { CrewProactiveAlertDTO, MedicationStockDTO } from './types/api';
 import './styles.css';
 import './subpages.css';
 
@@ -79,6 +80,9 @@ function App() {
   const {profiles,inventory,flags}=backend;
   const [mobile, setMobile] = useState(false);
   const [inventoryAlert, setInventoryAlert] = useState<string | null>(null);
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [manageStock, setManageStock] = useState(false);
+  const [crewAlerts, setCrewAlerts] = useState<CrewProactiveAlertDTO[]>([]);
   const alertTimerRef = useRef<number | null>(null);
   const [voiceResponse, setVoiceResponse] = useState<InvestigationResponse | null>(null);
   const setFlags = (update: boolean[] | ((f: boolean[]) => boolean[])) =>
@@ -97,6 +101,17 @@ function App() {
       setCrewId(profiles[0].id);
     }
   }, [backend.initialized, profiles, crewId]);
+
+  useEffect(() => {
+    if (!backend.live || (page !== 2 && page !== 4)) return;
+    let active = true;
+    const refresh = () => void investigationApi.getCrewAlerts()
+      .then((alerts) => { if (active) setCrewAlerts(alerts.filter((a) => a.needs_investigation)); })
+      .catch(() => { if (active) setCrewAlerts([]); });
+    refresh();
+    const timer = window.setInterval(refresh, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [backend.live, page, backend.record?.id]);
 
   const crew = profiles.find((c) => c.id === crewId) ?? profiles[0];
 
@@ -319,15 +334,42 @@ function App() {
                   </div>
                 )}
 
+                {crewAlerts.length > 0 && (
+                  <div role="status" className="inv-crew-alert-banner">
+                    <strong>Crew needing investigation</strong>
+                    <div className="inv-crew-alert-actions">
+                      {crewAlerts.map((alert) => (
+                        <button key={alert.astronaut_id} type="button" className="hairline-pill-btn"
+                          onClick={() => { handleSelectCrew(alert.astronaut_id); go(2); }}>
+                          {alert.astronaut_id}: {alert.summary_tags.join(' · ')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="inventory-toolbar inv-inventory-toolbar-row">
+                  <label className="inv-search-label">Search medications
+                    <input type="search" placeholder="Filter by name…" value={inventorySearch}
+                      onChange={(event) => setInventorySearch(event.target.value)} />
+                  </label>
+                  <button type="button" className={`hairline-pill-btn${manageStock ? ' active' : ''}`}
+                    aria-pressed={manageStock} onClick={() => setManageStock((value) => !value)}>
+                    {manageStock ? 'Done Adjusting' : 'Adjust Stock'}
+                  </button>
+                </div>
+
                 {backend.medications.length > 0 && (
                   <div className="inv-med-inventory-section">
                     <div className="hairline-telemetry-list">
                       {backend.medications
+                        .filter((m) => m.name.toLowerCase().includes(inventorySearch.trim().toLowerCase()))
                         .map((m) => (
                           <MedicationInventoryRow
                             key={m.id}
                             med={m}
                             busy={backend.busy}
+                            manageStock={manageStock}
                             onUpdate={async (qty) => {
                               const prev = m.quantity;
                               await backend.updateMedicationQuantity(m.id, qty);
@@ -812,15 +854,18 @@ function CheckIn({
 function MedicationInventoryRow({
   med,
   busy,
+  manageStock,
   onUpdate,
 }: {
   med: MedicationStockDTO;
   busy: boolean;
+  manageStock: boolean;
   onUpdate: (quantity: number) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draftQty, setDraftQty] = useState(String(med.quantity));
   const [saving, setSaving] = useState(false);
+  const purpose = getMedicationPurpose(med.id);
 
   useEffect(() => {
     setDraftQty(String(med.quantity));
@@ -846,10 +891,10 @@ function MedicationInventoryRow({
           <em className={med.quantity > 0 ? 'ok-txt' : 'unknown-val'}>
             {med.quantity} {med.unit} remaining
           </em>{' '}
-          · Pre-flight kit ({med.protocol_ref})
+          · {purpose ?? `Pre-flight kit (${med.protocol_ref})`}
         </span>
       </div>
-      <div className="inv-med-manual-controls">
+      {manageStock && <div className="inv-med-manual-controls">
         {editing ? (
           <>
             <input
@@ -895,7 +940,7 @@ function MedicationInventoryRow({
             Edit
           </button>
         )}
-      </div>
+      </div>}
     </article>
   );
 }

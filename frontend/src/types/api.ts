@@ -144,7 +144,18 @@ export interface InvestigationSessionDTO {
  dispensed_medication_id: string | null;
  dispensed_units: number;
  dispensed_secondary_ids: string[];
+ condition_id?: string | null;
+ proactive_alert?: string | null;
  synthetic: true;
+}
+
+export interface CrewProactiveAlertDTO {
+  astronaut_id: string;
+  deviation_count: number;
+  summary_tags: string[];
+  urgent: boolean;
+  needs_investigation: boolean;
+  session_status: string | null;
 }
 
 export interface ReportSnapshotDTO {

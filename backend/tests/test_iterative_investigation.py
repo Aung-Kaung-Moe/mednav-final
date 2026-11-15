@@ -47,6 +47,11 @@ def test_fast_post_exercise_elimination_skips_medication(client):
         f"/api/v1/investigation/sessions/{s['id']}/answer",
         json={"question_id": "recent_exercise", "answer_value": "yes"},
     ).json()
+    assert s["current_question"]["id"] == "mission_duration_check"
+    s = client.post(
+        f"/api/v1/investigation/sessions/{s['id']}/answer",
+        json={"question_id": "mission_duration_check", "answer_value": "45"},
+    ).json()
     assert s["status"] == "completed"
     assert "Workout" in s["assessment_title"]
     assert s["medication_allocation"]["rationing_mode"] == "non_pharmacologic"
@@ -70,6 +75,7 @@ def test_iterative_narrowing_and_mission_rationing_by_crew_days_and_stock(client
     s = client.post("/api/v1/investigation/sessions", json={"astronaut_id": "Crew B", "check_in_id": ci["id"]}).json()
     step_answers = {
         "recent_exercise": ("no", None),
+        "mission_duration_check": ("45", 60),
         "hydration_intake": ("adequate", None),
         "temperature_check": ("normal", 36.8),
         "sleep_environment": ("normal", None),
@@ -120,6 +126,7 @@ def test_mild_headache_saves_medication(client):
 
     step_answers = {
         "recent_exercise": "no",
+        "mission_duration_check": "45",
         "hydration_intake": "adequate",
         "temperature_check": "normal",
         "sleep_environment": "normal",
@@ -154,6 +161,7 @@ def test_acute_fever_with_tight_reserve_still_allocates_and_includes_cotreatment
 
     answers = {
         "recent_exercise": "no",
+        "mission_duration_check": "45",
         "hydration_intake": "low",
         "temperature_check": "elevated",
         "vestibular_trigger": "yes",
@@ -189,3 +197,35 @@ def test_acute_fever_with_tight_reserve_still_allocates_and_includes_cotreatment
     assert len(taken) == 1
     assert taken[0]["medication_name"] == "Oral Rehydration Salts (ORS)"
     assert taken[0]["dose"] == f"{next(item for item in s['secondary_allocations'] if item['medication_id'] == 'oral_rehydration_salts')['recommended_total_units']} packets"
+
+
+def test_proactive_alert_and_offline_care_path(client):
+    check_in = client.post(
+        "/api/v1/check-ins",
+        json={"astronaut_id": "Crew A", "hr": 130, "sleep": 7.2, "bp": None, "symptoms": ["Headache", "Fatigue"]},
+    ).json()
+    response = client.get("/api/v1/investigation/crew-alerts")
+    assert response.status_code == 200
+    alert = next(a for a in response.json() if a["astronaut_id"] == "Crew A")
+    assert alert["needs_investigation"] and alert["urgent"]
+
+    session = client.get("/api/v1/investigation/sessions/latest/Crew%20A").json()
+    assert session["check_in_id"] == check_in["id"]
+    assert "130 bpm" in session["proactive_alert"]
+    answers = {
+        "recent_exercise": "no", "mission_duration_check": "90",
+        "sweating_autonomic_check": "yes", "hydration_intake": "low",
+        "temperature_check": "normal", "sleep_environment": "normal",
+        "symptom_severity": "moderate",
+    }
+    while session["status"] == "in_progress":
+        question = session["current_question"]["id"]
+        result = client.post(
+            f"/api/v1/investigation/sessions/{session['id']}/answer",
+            json={"question_id": question, "answer_value": answers[question]},
+        )
+        assert result.status_code == 200, result.text
+        session = result.json()
+    assert session["condition_id"] == "autonomic_tachycardia_diaphoresis"
+    assert session["mission_context"]["remaining_days"] == 90
+    assert any("health_care/" in item for item in session["clinical_basis"])

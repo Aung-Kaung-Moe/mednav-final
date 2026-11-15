@@ -112,6 +112,12 @@ class ProtocolGuideline:
 
 
 CONDITION_PROTOCOLS: dict[str, ProtocolGuideline] = {
+    "autonomic_tachycardia_diaphoresis": ProtocolGuideline(
+        condition_id="autonomic_tachycardia_diaphoresis",
+        reference="Mayo Clinic & MedlinePlus · Acute Tachycardia & Cold Sweats Triage",
+        urgency="high",
+        non_drug_countermeasure="Stop activity immediately, rest seated or lying flat, measure blood pressure + repeat heart rate in 10-15 min, and alert Crew Medical Officer / Flight Surgeon if chest pain or shortness of breath is present.",
+    ),
     "febrile_infectious_illness": ProtocolGuideline(
         condition_id="febrile_infectious_illness",
         reference="NASA-STD-3001 / ISS IFMC · Antipyretic & Infection Screening",
@@ -147,5 +153,23 @@ CONDITION_PROTOCOLS: dict[str, ProtocolGuideline] = {
         reference="ISS Countermeasure · Post-ARED / EVA Physiological Recovery",
         urgency="low",
         non_drug_countermeasure="Cool down 15-20 min, hydrate, and avoid unnecessary medication to conserve crew formulary.",
+    ),
+    "sans_ocular_shift": ProtocolGuideline(
+        condition_id="sans_ocular_shift",
+        reference="NASA HRP SANS Protocol · Mader et al. (2011) Ophthalmology",
+        urgency="high",
+        non_drug_countermeasure="Perform onboard Amsler grid / ocular ultrasound check and schedule Flight Surgeon consult for neuro-ocular fluid-shift monitoring.",
+    ),
+    "musculoskeletal_strain": ProtocolGuideline(
+        condition_id="musculoskeletal_strain",
+        reference="ISS IFMC & Eyal et al. (2019) · Musculoskeletal / ARED Strain Care",
+        urgency="moderate",
+        non_drug_countermeasure="Rest the affected muscle group, apply local comfort measures, and hydrate before any NSAID dosing.",
+    ),
+    "nausea_gi_support": ProtocolGuideline(
+        condition_id="nausea_gi_support",
+        reference="ISS Oral Pack (Purple) & Wotring (2015) · Non-Sedating Anti-Emetic Care",
+        urgency="moderate",
+        non_drug_countermeasure="Avoid gastric irritants (NSAIDs), let Ondansetron ODT dissolve on tongue, and sip fluids slowly once nausea eases.",
     ),
 }

@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   ArrowLeft,
+  BookOpen,
   CheckCircle2,
   ClipboardCheck,
+  Droplets,
   FileText,
+  HeartPulse,
+  Moon,
   Pill,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import { investigationApi } from '../api';
-import type { Crew, Equipment } from '../data/fixtures';
-import { getClinicalResourcesForSuggestion } from '../data/medicalReferences';
+import type { Crew } from '../data/fixtures';
+import {
+  getClinicalResourcesForSuggestion,
+  getOfflineHealthCareGuide,
+} from '../data/medicalReferences';
 import type {
   InvestigationSessionDTO,
   SavedCheckIn,
@@ -19,40 +29,14 @@ type Props = {
   live?: boolean;
   crew: Crew;
   liveRecord?: SavedCheckIn | null;
-  inventory: Equipment[];
   onStockChanged?: () => Promise<void> | void;
   go: (p: number) => void;
 };
-
-const QUICK_TEST_CASES = [
-  {
-    label: 'Test: High HR 112 (Exercise vs Illness)',
-    hr: 112,
-    sleep: 7.2,
-    bp: null,
-    symptoms: [] as string[],
-  },
-  {
-    label: 'Test: Headache + HR 96 + Low Sleep',
-    hr: 96,
-    sleep: 4.5,
-    bp: null,
-    symptoms: ['Headache', 'Fatigue'],
-  },
-  {
-    label: 'Test: Dizziness + Nausea + HR 102',
-    hr: 102,
-    sleep: 6.0,
-    bp: null,
-    symptoms: ['Dizziness', 'Nausea'],
-  },
-];
 
 export function IterativeInvestigation({
   live = true,
   crew,
   liveRecord,
-  inventory,
   onStockChanged,
   go,
 }: Props) {
@@ -61,7 +45,6 @@ export function IterativeInvestigation({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [numericInput, setNumericInput] = useState('');
-  const [daysInput, setDaysInput] = useState(45);
 
   const loadLatest = useCallback(async () => {
     if (!live) return;
@@ -70,7 +53,6 @@ export function IterativeInvestigation({
     try {
       const dto = await investigationApi.getLatestSession(crew.id);
       setSession(dto);
-      setDaysInput(dto.mission_context.remaining_days);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -98,23 +80,9 @@ export function IterativeInvestigation({
       });
       setSession(dto);
       setNumericInput('');
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleMissionPatch = async (nextDays: number) => {
-    setSubmitting(true);
-    setError('');
-    try {
-      await investigationApi.updateMissionContext({
-        crew_count: session?.mission_context.crew_count ?? 4,
-        remaining_days: nextDays,
-      });
-      await loadLatest();
-      await onStockChanged?.();
+      if (questionId === 'mission_duration_check') {
+        await onStockChanged?.();
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -130,30 +98,6 @@ export function IterativeInvestigation({
       const dto = await investigationApi.dispenseAllocation(session.id, medicationId);
       setSession(dto);
       await onStockChanged?.();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleQuickTestCase = async (tc: (typeof QUICK_TEST_CASES)[number]) => {
-    setSubmitting(true);
-    setError('');
-    setNumericInput('');
-    try {
-      const saved = await investigationApi.createSyntheticCheckIn({
-        astronaut_id: crew.id,
-        hr: tc.hr,
-        sleep: tc.sleep,
-        bp: tc.bp,
-        symptoms: tc.symptoms,
-      });
-      const dto = await investigationApi.startSession({
-        astronaut_id: crew.id,
-        check_in_id: saved.id,
-      });
-      setSession(dto);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -187,6 +131,26 @@ export function IterativeInvestigation({
   const alloc = session?.medication_allocation;
   const q = session?.current_question;
   const isCompleted = session?.status === 'completed';
+  const healthCareGuide = getOfflineHealthCareGuide(session?.condition_id, alloc?.medication_id);
+  const titleText = session?.assessment_title ?? '';
+  const isUrgentOutcome = /urgent|fever|tachycardia|alert/i.test(titleText);
+  const isClearOutcome = /normal|clear|workout/i.test(titleText);
+  const outcomeTone = isUrgentOutcome ? 'urgent' : isClearOutcome ? 'clear' : 'info';
+
+  const getChipVisual = (text: string) => {
+    const lower = text.toLowerCase();
+    if (lower.includes('heart rate')) return { tone: 'chip-hr', Icon: HeartPulse };
+    if (lower.includes('sleep')) return { tone: 'chip-sleep', Icon: Moon };
+    if (lower.includes('symptom')) return { tone: 'chip-symptoms', Icon: Activity };
+    return { tone: 'is-alert', Icon: Sparkles };
+  };
+
+  const getMedVisual = (medId: string | null | undefined) => {
+    if (medId === 'oral_rehydration_salts') return { tone: 'is-cyan', Icon: Droplets };
+    if (medId === 'melatonin_3mg') return { tone: 'is-violet', Icon: Moon };
+    if (medId === 'ondansetron_8mg' || medId === 'meclizine_25mg') return { tone: 'is-amber', Icon: Activity };
+    return { tone: 'is-rose', Icon: Pill };
+  };
 
   return (
     <div
@@ -194,80 +158,30 @@ export function IterativeInvestigation({
       data-testid="iterative-investigation"
       data-status={session?.status ?? 'loading'}
     >
-      {/* TOP BAR */}
-      <div className="mars-top-header">
-        <button
-          type="button"
-          className="hairline-pill-btn"
-          onClick={() => go(0)}
-        >
-          <ArrowLeft size={15} /> Overview
-        </button>
-
-        <span />
-
-        <button
-          type="button"
-          className="hairline-pill-btn"
-          onClick={() => go(4)}
-        >
-          <Pill size={14} /> View Medical Inventory
-        </button>
-      </div>
-
-      {/* MISSION PARAMETERS BAR (REMAINING DAYS IN INVESTIGATION) */}
-      <section className="inv-mission-strip" aria-label="Mission supply parameters">
-        <div className="inv-mission-inline-field">
-          <Activity size={15} />
-          <label htmlFor="inv-remaining-days">Remaining Days:</label>
-          <input
-            id="inv-remaining-days"
-            type="number"
-            min={1}
-            max={1825}
-            value={daysInput}
-            onChange={(e) => setDaysInput(Math.max(1, Math.min(1825, Number(e.target.value) || 1)))}
-          />
-          <span className="inv-days-months">({(daysInput / 30).toFixed(1)} mo)</span>
+      {/* TOP BAR (matches Dashboard header anatomy) */}
+      <div className="dashboard-header-bar inv-header-bar">
+        <div className="dash-title-group">
+          <h1 className="section-sans-headline" data-testid="investigation-crew-label">
+            {crew.id} · Health Investigation
+          </h1>
         </div>
 
-        <div className="inv-days-presets">
-          {[15, 45, 90, 180].map((d) => (
-            <button
-              key={d}
-              type="button"
-              className={`hairline-pill-btn ${daysInput === d ? 'active' : ''}`}
-              disabled={submitting}
-              onClick={() => setDaysInput(d)}
-            >
-              {d}d
-            </button>
-          ))}
+        <div className="dashboard-header-actions">
           <button
             type="button"
             className="hairline-pill-btn"
-            disabled={submitting}
-            onClick={() => void handleMissionPatch(daysInput)}
+            onClick={() => go(0)}
           >
-            Apply
+            <ArrowLeft size={14} /> Overview
           </button>
-        </div>
-      </section>
-
-      {/* QUICK TEST SCENARIOS FOR DAILY TELEMETRY SIMULATION */}
-      <div className="inv-quick-test-bar">
-        <span className="micro-label">TEST SCENARIOS:</span>
-        {QUICK_TEST_CASES.map((tc) => (
           <button
-            key={tc.label}
             type="button"
             className="hairline-pill-btn"
-            disabled={submitting}
-            onClick={() => void handleQuickTestCase(tc)}
+            onClick={() => go(4)}
           >
-            {tc.label}
+            <Pill size={14} /> View Medical Inventory
           </button>
-        ))}
+        </div>
       </div>
 
       {error && (
@@ -277,43 +191,25 @@ export function IterativeInvestigation({
       )}
 
       {loading && !session ? (
-        <div className="frosted-telemetry-sheet" style={{ padding: 24 }}>
+        <div className="command-card" style={{ padding: 24 }}>
           <p className="telemetry-summary-copy">Loading investigation…</p>
         </div>
       ) : (
-        <div className="frosted-telemetry-sheet inv-workspace">
-          {/* LEFT: ITERATIVE QUESTIONS + FINAL MEDICATION ADVICE */}
+        <div className="inv-workspace">
+          {/* LEFT: ITERATIVE QUESTIONS OR FINAL MEDICATION ADVICE */}
           <div className="inv-main-column">
-            {snap && (
-              <div className="inv-snapshot-strip">
-                <div>
-                  <span className="micro-label">WHAT WE SEE IN DAILY DATA</span>
-                  <p>
-                    {snap.anomalies.length > 0
-                      ? snap.anomalies.join(' · ')
-                      : 'Readings look normal'}
-                  </p>
-                </div>
-                <div>
-                  <span className="micro-label">MISSING READINGS</span>
-                  <p className={snap.missing_fields.length > 0 ? 'unknown-val' : ''}>
-                    {snap.missing_fields.length > 0
-                      ? snap.missing_fields.join(', ')
-                      : 'All core readings available'}
-                  </p>
-                </div>
-              </div>
-            )}
-
             {/* ACTIVE QUESTION CARD */}
             {session?.status === 'in_progress' && q && (
-              <section className="inv-question-card" aria-label="Current investigation question">
-                <div className="stage-card-head">
-                  <span>
-                    STEP {session.turn_count + 1} OF UP TO {session.max_turns}
+              <section className="command-card inv-question-card" aria-label="Current investigation question">
+                <header className="command-card-header">
+                  <div className="command-card-title">
+                    <Activity size={17} />
+                    <span>Check-In Questions</span>
+                  </div>
+                  <span className="realtime-tag">
+                    STEP {session.turn_count + 1} / {session.max_turns} · {crew.id.toUpperCase()}
                   </span>
-                  <span>QUICK QUESTION</span>
-                </div>
+                </header>
                 <h2 className="inv-question-prompt">{q.prompt}</h2>
                 <p className="inv-question-rationale">{q.rationale}</p>
 
@@ -332,11 +228,37 @@ export function IterativeInvestigation({
                       {q.numeric_label ?? 'Value'} ({q.numeric_unit ?? ''}):
                       <input
                         type="number"
-                        step="0.1"
-                        placeholder="e.g. 37.1"
+                        step={q.id === 'mission_duration_check' ? 1 : 0.1}
+                        min={q.id === 'mission_duration_check' ? 1 : undefined}
+                        placeholder={q.id === 'mission_duration_check' ? 'e.g. 60' : 'e.g. 37.1'}
                         value={numericInput}
                         onChange={(e) => setNumericInput(e.target.value)}
                       />
+                      {q.id === 'mission_duration_check' && numericInput.trim() !== '' && (
+                        <button
+                          type="button"
+                          className="hairline-pill-btn"
+                          disabled={submitting}
+                          onClick={() => void handleAnswer('mission_duration_check', '45')}
+                        >
+                          Confirm Days
+                        </button>
+                      )}
+                      {q.id === 'temperature_check' && numericInput.trim() !== '' && (
+                        <button
+                          type="button"
+                          className="hairline-pill-btn active"
+                          disabled={submitting}
+                          onClick={() =>
+                            void handleAnswer(
+                              'temperature_check',
+                              Number(numericInput) >= 38.0 ? 'elevated' : 'normal'
+                            )
+                          }
+                        >
+                          Confirm Temp
+                        </button>
+                      )}
                     </label>
                   </div>
                 )}
@@ -360,62 +282,71 @@ export function IterativeInvestigation({
             {/* FINAL RESULT & MEDICATION INSTRUCTION */}
             {isCompleted && alloc && (
               <section
-                className={`inv-outcome-card mode-${session?.dispensed ? 'standard' : alloc.rationing_mode}`}
+                className={`command-card inv-outcome-card tone-${outcomeTone} mode-${session?.dispensed ? 'standard' : alloc.rationing_mode}`}
                 aria-label="Investigation outcome and medication allocation"
               >
-                <div className="trace-header-line">
-                  <span className="wide-planetary-label left-aligned">
-                    FINAL RESULT &amp; MEDICATION ADVICE
-                  </span>
-                  <span className="trace-status">
-                    {session?.dispensed
-                      ? `DOSE TAKEN · ${session?.confidence_pct}% MATCH`
-                      : `${session?.confidence_pct}% MATCH`}
-                  </span>
+                <div className="inv-outcome-hero">
+                  {isUrgentOutcome ? (
+                    <HeartPulse size={20} className="vital-icon coral-txt" />
+                  ) : isClearOutcome ? (
+                    <ShieldCheck size={20} className="inv-bare-accent" />
+                  ) : (
+                    <CheckCircle2 size={20} className="inv-bare-accent" />
+                  )}
+                  <h2 className="inv-outcome-title">{session?.assessment_title}</h2>
                 </div>
+                <p className="telemetry-summary-copy inv-outcome-summary">{session?.assessment_summary}</p>
 
-                <h2>
-                  <CheckCircle2 size={22} style={{ verticalAlign: 'text-bottom', marginRight: 8 }} />
-                  {session?.assessment_title}
-                </h2>
-                <p className="telemetry-summary-copy">{session?.assessment_summary}</p>
+                {healthCareGuide?.condition?.immediate_actions[0] && (
+                  <div className="inv-care-pill" data-testid="offline-healthcare-guide">
+                    <ShieldCheck size={15} className="inv-bare-accent" aria-hidden="true" />
+                    <div>
+                      <strong>Care:</strong> {healthCareGuide.condition.immediate_actions[0]}
+                    </div>
+                  </div>
+                )}
 
                 <div className="inv-allocation-box">
-                  <p className="inv-alloc-schedule">
-                    {alloc.medication_name ? (
-                      <>
-                        <strong>{alloc.medication_name}</strong> ·{' '}
-                      </>
-                    ) : null}
-                    {session?.dispensed
-                      ? `Deducted ${session.dispensed_units} ${alloc.unit} from Medical Inventory. ${alloc.stock_available} ${alloc.unit} now remain onboard.`
-                      : alloc.dosage_schedule}
-                  </p>
+                  <div className="inv-alloc-head">
+                    {alloc.medication_id && (
+                      <Pill size={16} className="inv-bare-accent" aria-hidden="true" />
+                    )}
+                    <p className="inv-alloc-schedule">
+                      {alloc.medication_name ? (
+                        <>
+                          <strong>{alloc.medication_name}</strong> ·{' '}
+                        </>
+                      ) : null}
+                      {session?.dispensed
+                        ? `Deducted ${session.dispensed_units} ${alloc.unit} for ${crew.id} (${alloc.stock_available} ${alloc.unit} left).`
+                        : alloc.dosage_schedule
+                            .replace(/\s*\([^)]*reserving[^)]*\)/i, '')
+                            .replace(/\s*\([^)]*\btotal\)/gi, '')}
+                    </p>
+                  </div>
 
                   {alloc.medication_id && (
                     <div className="inv-ration-metrics">
-                      <div>
-                        <small>Medical Inventory Stock</small>
-                        <strong>
+                      <div className="inv-metric-card">
+                        <small>Stock</small>
+                        <strong className={alloc.stock_available === 0 ? 'coral-txt' : ''}>
                           {alloc.stock_available} {alloc.unit}
                         </strong>
                       </div>
-                      <div>
-                        <small>
-                          Saved for Crew ({alloc.crew_count} crew · {alloc.remaining_days}d)
-                        </small>
+                      <div className="inv-metric-card">
+                        <small>Crew Reserve</small>
                         <strong>
                           {alloc.crew_safety_reserve} {alloc.unit}
                         </strong>
                       </div>
-                      <div>
-                        <small>Standard Dose</small>
+                      <div className="inv-metric-card">
+                        <small>Standard</small>
                         <strong>
                           {alloc.standard_total_units} {alloc.unit}
                         </strong>
                       </div>
-                      <div>
-                        <small>{session?.dispensed ? 'Dose Taken' : 'Your Allowed Dose'}</small>
+                      <div className="inv-metric-card is-recommended">
+                        <small>Recommended</small>
                         <strong className="inv-highlight-dose">
                           {session?.dispensed ? session.dispensed_units : alloc.recommended_total_units} {alloc.unit}
                         </strong>
@@ -424,155 +355,181 @@ export function IterativeInvestigation({
                   )}
 
                   <div className="inv-outcome-actions">
-                    {alloc.medication_id && (alloc.recommended_total_units > 0 || session?.dispensed) && (
+                    {alloc.medication_id && !session?.dispensed && alloc.recommended_total_units > 0 && (
                       <button
                         type="button"
-                        className="ghost-rect-cta inv-take-btn"
-                        disabled={submitting || session?.dispensed}
+                        className="hairline-pill-btn active inv-take-btn"
+                        disabled={submitting}
                         onClick={() => void handleDispense()}
                       >
-                        <ClipboardCheck size={15} />
+                        <ClipboardCheck size={14} />
                         <span>
-                          {session?.dispensed
-                            ? `Taken & Deducted (${session.dispensed_units} ${alloc.unit})`
-                            : `Take ${alloc.recommended_total_units} ${alloc.unit}`}
+                          Take {alloc.recommended_total_units} {alloc.unit}
                         </span>
                       </button>
                     )}
 
                     <button
                       type="button"
-                      className="hairline-pill-btn"
+                      className="hairline-pill-btn inv-action-inventory"
                       onClick={() => go(4)}
                     >
-                      <Pill size={15} /> Check Medical Inventory
+                      <Pill size={14} /> Check Medical Inventory
                     </button>
 
                     <button
                       type="button"
-                      className="hairline-pill-btn"
+                      className="hairline-pill-btn inv-action-report"
                       onClick={() => go(5)}
                     >
-                      <FileText size={15} /> Incident Report
+                      <FileText size={14} /> Incident Report
                     </button>
                   </div>
                 </div>
-
-                {(session?.secondary_allocations?.length ?? 0) > 0 && (
-                  <div className="inv-secondary-box">
-                    <div className="stage-card-head">
-                      <span>CO-TREATMENTS FOR OTHER ACTIVE SYMPTOMS</span>
-                      <span>ISS PROTOCOL</span>
-                    </div>
-                    <div className="inv-secondary-list">
-                      {session!.secondary_allocations.map((sec) => {
-                        const secTaken = Boolean(
-                          sec.medication_id &&
-                            session?.dispensed_secondary_ids?.includes(sec.medication_id)
-                        );
-                        return (
-                          <div key={sec.medication_id ?? sec.instruction_headline} className="inv-secondary-item">
-                            <div>
-                              <strong>
-                                {sec.medication_name} · {sec.recommended_total_units} {sec.unit}
-                              </strong>
-                              <p>{sec.dosage_schedule}</p>
-                            </div>
-                            {sec.medication_id && sec.recommended_total_units > 0 && (
-                              <button
-                                type="button"
-                                className="hairline-pill-btn"
-                                disabled={submitting || secTaken}
-                                onClick={() => void handleDispense(sec.medication_id ?? undefined)}
-                              >
-                                {secTaken
-                                  ? `Taken (${sec.recommended_total_units} ${sec.unit})`
-                                  : `Take ${sec.recommended_total_units} ${sec.unit}`}
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </section>
             )}
 
-            {/* CONCISE OFFLINE-BUNDLED CLINICAL RESOURCES */}
-            {isCompleted && alloc && (
-              <section className="inv-turns-history" aria-label="Medication suggestion clinical sources">
-                <div className="stage-card-head">
-                  <span>CLINICAL SOURCES</span>
-                  <span>OFFLINE BUNDLED</span>
-                </div>
-                {getClinicalResourcesForSuggestion(
-                  alloc.medication_id,
-                  (session?.secondary_allocations?.length ?? 0) > 0
-                ).map((res, idx) => (
-                  <div key={res.id} className="inv-turn-row">
-                    <span className="inv-turn-num">#{idx + 1}</span>
-                    <div className="inv-turn-body">
-                      <small>{res.shortCitation}</small>
-                      <strong>{res.summary}</strong>
-                      <small>
-                        Offline cached ·{' '}
-                        <a
-                          href={res.referenceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: 'inherit', textDecoration: 'underline' }}
-                        >
-                          {res.referenceUrl}
-                        </a>
-                      </small>
-                    </div>
+            {/* CO-TREATMENT CARD */}
+            {isCompleted && (session?.secondary_allocations?.length ?? 0) > 0 && (
+              <section className="command-card inv-secondary-card">
+                <header className="command-card-header">
+                  <div className="command-card-title">
+                    <Pill size={17} />
+                    <span>Co-Treatments for {crew.id}</span>
                   </div>
-                ))}
+                  <span className="realtime-tag">
+                    {session!.secondary_allocations.length} AVAILABLE
+                  </span>
+                </header>
+                <div className="inv-secondary-list">
+                  {session!.secondary_allocations.map((sec) => {
+                    const secTaken = Boolean(
+                      sec.medication_id &&
+                        session?.dispensed_secondary_ids?.includes(sec.medication_id)
+                    );
+                    const { tone, Icon } = getMedVisual(sec.medication_id);
+                    return (
+                      <div key={sec.medication_id ?? sec.instruction_headline} className="inv-secondary-item">
+                        <div className="inv-secondary-lead">
+                          <Icon size={16} className={`inv-bare-icon ${tone}`} aria-hidden="true" />
+                          <div className="inv-secondary-copy">
+                            <strong>
+                              {sec.medication_name} · {sec.recommended_total_units} {sec.unit}
+                            </strong>
+                            <p>{sec.dosage_schedule.replace(/\s*\([^)]*\btotal\)/gi, '')}</p>
+                          </div>
+                        </div>
+                        {sec.medication_id && !secTaken && sec.recommended_total_units > 0 && (
+                          <button
+                            type="button"
+                            className="hairline-pill-btn inv-secondary-take-btn"
+                            disabled={submitting}
+                            onClick={() => void handleDispense(sec.medication_id ?? undefined)}
+                          >
+                            Take {sec.recommended_total_units} {sec.unit}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </section>
             )}
           </div>
 
-          {/* RIGHT: POSSIBLE CONDITIONS */}
-          <aside className="decision-trace inv-hypotheses-col" aria-label="Possible causes">
-            <div className="trace-header-line">
-              <span className="micro-label inv-causes-title">
-                POSSIBLE CAUSES
-              </span>
-            </div>
-
-            <div className="inv-hyp-list">
-              {(session?.hypotheses ?? []).map((h) => (
-                <div key={h.id} className={`inv-hyp-item status-${h.status}`}>
-                  <div className="inv-hyp-head">
-                    <strong>{h.label}</strong>
-                    <span className={`inv-hyp-badge badge-${h.status}`}>
-                      {h.status.replace('_', ' ')} · {h.score}%
+          {/* RIGHT: SNAPSHOT + POSSIBLE CAUSES + REFERENCES */}
+          <aside className="command-card inv-hypotheses-col" aria-label="Possible causes and snapshot">
+            {snap && (
+              <div className="inv-side-section">
+                <header className="command-card-header inv-side-header">
+                  <div className="command-card-title">
+                    <HeartPulse size={16} />
+                    <span>{crew.id} · Daily Telemetry</span>
+                  </div>
+                </header>
+                <div className="inv-chip-row">
+                  {snap.anomalies.length > 0 ? (
+                    snap.anomalies.map((item, idx) => {
+                      const cleanItem = item.replace(/\s*\(normal [^)]+\)/i, '');
+                      const { tone, Icon } = getChipVisual(cleanItem);
+                      return (
+                        <span key={idx} className={`inv-data-chip ${tone}`}>
+                          <Icon size={12} className={`inv-bare-icon ${tone}`} /> {cleanItem}
+                        </span>
+                      );
+                    })
+                  ) : (
+                    <span className="inv-data-chip chip-ok">
+                      <ShieldCheck size={12} className="inv-bare-accent" /> Normal Baseline
                     </span>
-                  </div>
-                  <div className="inv-hyp-bar">
-                    <div style={{ width: `${h.score}%` }} />
-                  </div>
-                  <small>{h.reason}</small>
+                  )}
+                  {snap.missing_fields.map((f) => (
+                    <span key={f} className="inv-data-chip is-missing">
+                      <AlertTriangle size={12} className="inv-bare-icon is-missing" /> Missing: {f}
+                    </span>
+                  ))}
                 </div>
-              ))}
+              </div>
+            )}
+
+            <div className="inv-side-section">
+              <div className="trace-header-line">
+                <span className="micro-label inv-causes-title">
+                  POSSIBLE CAUSES
+                </span>
+              </div>
+
+              <div className="inv-hyp-list">
+                {(session?.hypotheses ?? [])
+                  .filter((h) => !isCompleted || h.status !== 'ruled_out')
+                  .slice(0, 3)
+                  .map((h, idx) => {
+                    const barTone =
+                      idx === 0
+                        ? isUrgentOutcome
+                          ? 'bar-rose'
+                          : 'bar-cyan'
+                        : 'bar-muted';
+                    return (
+                      <div key={h.id} className={`inv-hyp-item status-${h.status} ${barTone}`}>
+                        <div className="inv-hyp-head">
+                          <strong>{h.label}</strong>
+                          <span className={`inv-hyp-badge badge-${h.status} ${barTone}`}>
+                            {h.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        {h.status === 'leading' && <small>{h.reason}</small>}
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
 
-            <div className="trace-section" style={{ marginTop: 18 }}>
-              <span className="micro-label">ONBOARD DEVICES</span>
-              <ul className="inv-equip-mini">
-                {inventory
-                  .filter((e) => e.category === 'Monitoring' || e.category === 'Imaging')
-                  .map((e) => (
-                    <li key={e.name}>
-                      <span>{e.name}</span>
-                      <strong className={e.available && e.quantity > 0 ? 'ok-txt' : 'unknown-val'}>
-                        {e.available && e.quantity > 0 ? 'Available' : 'Unavailable'}
-                      </strong>
-                    </li>
-                  ))}
-              </ul>
-            </div>
+            {isCompleted && (alloc?.medication_id || (session?.condition_id && session.condition_id !== 'routine_observation')) && (
+              <div className="inv-side-section inv-ref-sidebar" data-testid="medication-source-links">
+                <span className="micro-label">REFERENCES</span>
+                <div className="inv-ref-links">
+                    {getClinicalResourcesForSuggestion(
+                      alloc?.medication_id,
+                      (session?.secondary_allocations?.length ?? 0) > 0,
+                      session?.condition_id
+                    )
+                      .slice(0, 2)
+                      .map((res) => (
+                      <a
+                        key={res.id}
+                        href={res.referenceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inv-ref-card-link"
+                      >
+                        <BookOpen size={13} className="inv-bare-accent" />
+                        <span>{res.shortCitation} ↗</span>
+                      </a>
+                    ))}
+                </div>
+              </div>
+            )}
           </aside>
         </div>
       )}

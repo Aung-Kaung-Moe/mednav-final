@@ -12,7 +12,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
+import json
 from math import ceil
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -46,6 +49,39 @@ DEFAULT_MISSION_CONFIG = {
 }
 
 DEFAULT_MEDICATIONS = ISS_FORMULARY_SEEDS
+HEALTH_CARE_DIR = Path(__file__).resolve().parents[2] / "health_care"
+
+
+@lru_cache(maxsize=1)
+def _load_health_care_library() -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load local offline medical references saved under health_care/ (no network needed)."""
+    conditions: dict[str, Any] = {}
+    medications: dict[str, Any] = {}
+    cond_path = HEALTH_CARE_DIR / "conditions_and_symptoms.json"
+    med_path = HEALTH_CARE_DIR / "medications_formulary.json"
+    try:
+        if cond_path.is_file():
+            conditions = json.loads(cond_path.read_text(encoding="utf-8")).get("conditions", {})
+    except Exception:
+        conditions = {}
+    try:
+        if med_path.is_file():
+            medications = json.loads(med_path.read_text(encoding="utf-8")).get("medications", {})
+    except Exception:
+        medications = {}
+    return conditions, medications
+
+
+@lru_cache(maxsize=1)
+def _load_preflight_baseline() -> dict[str, Any]:
+    """Load pre-flight astronaut normal vital-sign baseline reference saved under health_care/."""
+    path = HEALTH_CARE_DIR / "astronaut_preflight_baseline.json"
+    try:
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8")).get("preflight_normal_baselines", {})
+    except Exception:
+        pass
+    return {}
 
 
 class StrictModel(BaseModel):
@@ -193,7 +229,18 @@ class InvestigationSessionDTO(StrictModel):
     dispensed_medication_id: str | None = None
     dispensed_units: int = 0
     dispensed_secondary_ids: list[str] = Field(default_factory=list)
+    condition_id: str | None = None
+    proactive_alert: str | None = None
     synthetic: Literal[True] = True
+
+
+class CrewProactiveAlertDTO(StrictModel):
+    astronaut_id: str
+    deviation_count: int
+    summary_tags: list[str]
+    urgent: bool
+    needs_investigation: bool
+    session_status: str | None = None
 
 
 def _sync_formulary_medications(session: Session) -> bool:
@@ -295,6 +342,20 @@ class QuestionSpec:
 
 
 QUESTIONS: dict[str, QuestionSpec] = {
+    "mission_duration_check": QuestionSpec(
+        id="mission_duration_check",
+        prompt="How long will your crew remain in space on this mission?",
+        rationale="Balances your medication dose against supplies reserved for the remaining mission days.",
+        supports_numeric_input=True,
+        numeric_label="Or enter exact remaining days",
+        numeric_unit="days",
+        options=(
+            ("15", "~15 days (Short mission)", "neutral"),
+            ("45", "~45 days (Medium mission)", "neutral"),
+            ("90", "~90 days (Extended mission)", "neutral"),
+            ("180", "~180 days (Long duration)", "neutral"),
+        ),
+    ),
     "recent_exercise": QuestionSpec(
         id="recent_exercise",
         prompt="Did you work out or do heavy physical activity in the last 45 minutes?",
@@ -303,6 +364,16 @@ QUESTIONS: dict[str, QuestionSpec] = {
             ("yes", "Yes, I just worked out", "confirm"),
             ("no", "No, I have been resting", "neutral"),
             ("unknown", "Not sure", "warn"),
+        ),
+    ),
+    "sweating_autonomic_check": QuestionSpec(
+        id="sweating_autonomic_check",
+        prompt="Are you having cold sweats, clammy skin, chest tightness, or shortness of breath right now?",
+        rationale="Because your heart rate rose sharply above your resting baseline, checking for cold sweats or chest discomfort screens for urgent autonomic stress or dehydration.",
+        options=(
+            ("yes", "Yes — Cold sweats, clammy skin, or chest tightness", "warn"),
+            ("no", "No — No cold sweats or chest discomfort", "confirm"),
+            ("unknown", "Not sure", "neutral"),
         ),
     ),
     "hydration_intake": QuestionSpec(
@@ -384,6 +455,7 @@ def _extract_snapshot(
     missing: list[str] = []
 
     hr_elevated = hr is not None and (hr >= astronaut.baseline + 12 or hr >= 92)
+    hr_critical = hr is not None and (hr >= 120 or hr >= astronaut.baseline + 45)
     sleep_low = sleep is not None and sleep <= max(4.5, astronaut.sleepBaseline - 1.5)
 
     if hr is None:
@@ -422,6 +494,7 @@ def _extract_snapshot(
     signals = {
         "hr": hr,
         "hr_elevated": hr_elevated,
+        "hr_critical": hr_critical,
         "sleep": sleep,
         "sleep_low": sleep_low,
         "bp_missing": bp is None,
@@ -432,6 +505,8 @@ def _extract_snapshot(
         "has_nausea": "nausea" in sym_lower,
         "has_fatigue": "fatigue" in sym_lower,
         "has_muscle": "muscle discomfort" in sym_lower,
+        "has_sweating": any("sweat" in s or "clammy" in s or "diaphores" in s for s in sym_lower),
+        "has_visual": any("visual" in s or "vision" in s for s in sym_lower),
     }
     return snapshot, signals
 
@@ -549,11 +624,62 @@ def _score_hypotheses(
         feb_status = "ruled_out"
         feb_reason = "Ruled out because temperature is normal."
 
+    # 7. Urgent Autonomic Stress / Acute Tachycardia + Cold Sweats
+    auto_active = bool(signals["hr_critical"] or signals["has_sweating"] or answers.get("sweating_autonomic_check") == "yes")
+    auto_score = 45 if signals["hr_critical"] else (68 if signals["has_sweating"] else 6)
+    auto_status: Literal["leading", "active", "ruled_out"] = "active" if auto_active else "ruled_out"
+    auto_reason = (
+        "Sharp resting heart rate spike warrants screening for cold sweats, dizziness, or autonomic stress."
+        if auto_active
+        else "No critical tachycardia or cold sweat warning signs reported."
+    )
+    if answers.get("sweating_autonomic_check") == "yes" or signals["has_sweating"]:
+        auto_score = 95
+        auto_status = "active"
+        auto_reason = "High heart rate with cold sweats or chest discomfort indicates urgent autonomic/volume stress — CMO consult advised."
+    elif answers.get("sweating_autonomic_check") == "no" and not signals["has_sweating"]:
+        auto_score = 12
+        auto_status = "ruled_out"
+        auto_reason = "Ruled out: no cold sweats, clammy skin, or chest tightness reported."
+
+    # 8. Neuro-ocular / SANS visual fluid shift screening (Mader et al. 2011 / NASA HRP SANS)
+    sans_score = 92 if signals["has_visual"] else 5
+    sans_status: Literal["leading", "active", "ruled_out"] = "active" if signals["has_visual"] else "ruled_out"
+    sans_reason = (
+        "Visual acuity change in microgravity warrants neuro-ocular (SANS) review and Flight Surgeon consultation."
+        if signals["has_visual"]
+        else "No visual acuity change reported."
+    )
+
+    # 9. Musculoskeletal / ARED Strain
+    mus_active = bool(signals["has_muscle"] and answers.get("recent_exercise") != "yes")
+    mus_score = 78 if mus_active else (30 if signals["has_muscle"] else 6)
+    mus_status: Literal["leading", "active", "ruled_out"] = "active" if mus_active else "ruled_out"
+    mus_reason = (
+        "Localized muscle soreness without acute post-workout recovery points to ARED/musculoskeletal strain."
+        if mus_active
+        else "No non-exercise musculoskeletal strain indicated."
+    )
+
+    # 10. Acute Nausea / GI Support
+    nau_active = bool(signals["has_nausea"] and answers.get("vestibular_trigger") != "yes")
+    nau_score = 76 if nau_active else (35 if signals["has_nausea"] else 6)
+    nau_status: Literal["leading", "active", "ruled_out"] = "active" if nau_active else "ruled_out"
+    nau_reason = (
+        "Reported nausea without fever or clear vestibular trigger points to non-sedating anti-emetic support."
+        if nau_active
+        else "No isolated gastrointestinal nausea active."
+    )
+
     items = [
+        ("autonomic_tachycardia_diaphoresis", "Acute Tachycardia / Autonomic Stress", auto_status, min(100, max(0, auto_score)), auto_reason),
+        ("sans_ocular_shift", "Ocular / Visual Fluid-Shift Check (SANS)", sans_status, min(100, max(0, sans_score)), sans_reason),
         ("post_exercise_tachycardia", "Recent Workout / Exercise Recovery", ex_status, min(100, max(0, ex_score)), ex_reason),
         ("dehydration_orthostatic", "Dehydration / Need More Fluids", hyd_status, min(100, max(0, hyd_score)), hyd_reason),
         ("cephalad_tension_headache", "Tension / Space Headache", head_status, min(100, max(0, head_score)), head_reason),
         ("space_motion_vestibular", "Space Motion Sickness", ves_status, min(100, max(0, ves_score)), ves_reason),
+        ("nausea_gi_support", "Acute Nausea / Gastrointestinal Discomfort", nau_status, min(100, max(0, nau_score)), nau_reason),
+        ("musculoskeletal_strain", "Musculoskeletal / ARED Strain", mus_status, min(100, max(0, mus_score)), mus_reason),
         ("circadian_sleep_deficit", "Lack of Sleep / Tiredness", slp_status, min(100, max(0, slp_score)), slp_reason),
         ("febrile_infectious_illness", "Fever / Possible Infection", feb_status, min(100, max(0, feb_score)), feb_reason),
     ]
@@ -574,31 +700,55 @@ def _select_next_question(
     signals: dict[str, Any],
     answers: dict[str, Any],
 ) -> QuestionSpec | None:
-    """Pick the single fastest, easiest question to narrow down what's going on."""
-    if (signals["hr_elevated"] or signals["has_muscle"]) and "recent_exercise" not in answers:
+    """Pick 1 to 4 targeted questions only when vitals/symptoms deviate from baseline."""
+    if not signals["hr_elevated"] and not signals["sleep_low"] and not signals["symptoms"]:
+        return None
+
+    if (signals["hr_critical"] or signals["has_sweating"]) and "sweating_autonomic_check" not in answers:
+        return QUESTIONS["sweating_autonomic_check"]
+
+    if (
+        (signals["hr_elevated"] or signals["has_muscle"])
+        and not (signals["has_dizziness"] and signals["has_nausea"])
+        and "recent_exercise" not in answers
+    ):
         return QUESTIONS["recent_exercise"]
 
-    # If recent exercise clearly explains isolated HR elevation without other symptoms, finish fast!
+    if "mission_duration_check" not in answers:
+        return QUESTIONS["mission_duration_check"]
+
+    # If recent exercise clearly explains isolated HR elevation without other symptoms, finish in 2 steps!
     if (
         answers.get("recent_exercise") == "yes"
         and not signals["has_headache"]
         and not signals["has_dizziness"]
         and not signals["has_nausea"]
+        and not signals["has_sweating"]
+        and not signals["has_visual"]
     ):
         return None
 
-    if "hydration_intake" not in answers and (
-        signals["hr_elevated"] or signals["has_headache"] or signals["has_dizziness"] or signals["has_fatigue"]
-    ):
-        return QUESTIONS["hydration_intake"]
-
     if "temperature_check" not in answers and (
-        signals["hr_elevated"] or signals["has_headache"] or signals["has_fatigue"]
+        signals["hr_elevated"] or signals["has_headache"] or signals["has_fatigue"] or signals["has_nausea"] or signals["has_muscle"] or signals["has_visual"]
     ):
         return QUESTIONS["temperature_check"]
 
     if "vestibular_trigger" not in answers and (signals["has_dizziness"] or signals["has_nausea"]):
         return QUESTIONS["vestibular_trigger"]
+
+    # When headache, muscle strain, or visual change is present without dizziness/critical HR, check severity within the 4-question cap
+    if (
+        (signals["has_headache"] or signals["has_muscle"] or signals["has_visual"])
+        and not signals["has_dizziness"]
+        and not signals["hr_critical"]
+        and "symptom_severity" not in answers
+    ):
+        return QUESTIONS["symptom_severity"]
+
+    if "hydration_intake" not in answers and (
+        signals["hr_elevated"] or signals["has_headache"] or signals["has_dizziness"] or signals["has_fatigue"] or signals["has_sweating"] or signals["has_muscle"] or signals["has_nausea"]
+    ):
+        return QUESTIONS["hydration_intake"]
 
     if "orthostatic_bp_check" not in answers and signals["has_dizziness"]:
         return QUESTIONS["orthostatic_bp_check"]
@@ -620,6 +770,25 @@ def _pick_leading_outcome(
     hypotheses: list[HypothesisDTO],
 ) -> tuple[str, str, str, int, str | None]:
     """Determine (outcome_id, title, summary, confidence_pct, medication_id)."""
+    if answers.get("sweating_autonomic_check") == "yes" or (
+        signals["has_sweating"] and answers.get("recent_exercise") != "yes"
+    ):
+        if answers.get("temperature_check") == "elevated":
+            return (
+                "autonomic_tachycardia_diaphoresis",
+                "Urgent Autonomic / Febrile Tachycardia Alert",
+                "Your heart rate spiked well above baseline with cold sweats and fever. Rest immediately, start fever reduction and oral rehydration below, and alert the Crew Medical Officer / Flight Surgeon urgently.",
+                94,
+                "acetaminophen_500mg",
+            )
+        return (
+            "autonomic_tachycardia_diaphoresis",
+            "Urgent Autonomic Stress / Acute Tachycardia Alert",
+            "Your heart rate spiked sharply above your resting baseline with cold sweats or chest discomfort. Stop exertion, rest flat/seated, start Oral Rehydration Salts slowly, check blood pressure, and alert the Crew Medical Officer / Flight Surgeon urgently.",
+            94,
+            "oral_rehydration_salts",
+        )
+
     if answers.get("recent_exercise") == "yes" and answers.get("temperature_check") != "elevated":
         med_id = "oral_rehydration_salts" if signals["has_muscle"] else None
         return (
@@ -639,13 +808,24 @@ def _pick_leading_outcome(
             "acetaminophen_500mg",
         )
 
+    if signals["has_visual"]:
+        relief_med = "acetaminophen_500mg" if (signals["has_headache"] and answers.get("symptom_severity") != "mild") else None
+        return (
+            "sans_ocular_shift",
+            "Ocular / Visual Fluid-Shift Check (SANS)",
+            "Visual acuity shifts in microgravity require ocular ultrasound / Amsler grid evaluation and Flight Surgeon review for Spaceflight Associated Neuro-ocular Syndrome (SANS).",
+            91,
+            relief_med,
+        )
+
     if answers.get("vestibular_trigger") == "yes":
+        ves_med = "ondansetron_8mg" if signals["has_nausea"] else "meclizine_25mg"
         return (
             "space_motion_vestibular",
             "Space Motion Sickness",
             "Movement makes your dizziness or nausea worse, which fits space motion sickness.",
             86,
-            "meclizine_25mg",
+            ves_med,
         )
 
     if answers.get("hydration_intake") == "low" or answers.get("orthostatic_bp_check") == "orthostatic":
@@ -655,6 +835,15 @@ def _pick_leading_outcome(
             "Low fluid intake and dizziness/elevated heart rate point to dehydration. Rehydration salts are recommended.",
             87,
             "oral_rehydration_salts",
+        )
+
+    if signals["has_nausea"]:
+        return (
+            "nausea_gi_support",
+            "Acute Nausea / Gastrointestinal Discomfort",
+            "Ongoing nausea without fever or clear motion trigger calls for non-sedating oral disintegrating anti-emetic support and gentle fluid sips.",
+            83,
+            "ondansetron_8mg",
         )
 
     if signals["has_headache"]:
@@ -672,6 +861,23 @@ def _pick_leading_outcome(
             "Headache without fever points to a tension or space fluid-shift headache.",
             82,
             "acetaminophen_500mg",
+        )
+
+    if signals["has_muscle"]:
+        if answers.get("symptom_severity") == "mild":
+            return (
+                "musculoskeletal_strain",
+                "Mild Musculoskeletal / ARED Strain",
+                "Mild localized muscle soreness without fever recovers best with rest and water first to conserve supplies.",
+                80,
+                None,
+            )
+        return (
+            "musculoskeletal_strain",
+            "Musculoskeletal / ARED Strain",
+            "Localized muscle discomfort without fever fits musculoskeletal or ARED strain.",
+            82,
+            "ibuprofen_400mg",
         )
 
     if signals["sleep_low"] or answers.get("sleep_environment") == "disrupted" or signals["has_fatigue"]:
@@ -806,8 +1012,8 @@ def compute_medication_allocation(
     else:
         headline = f"Take {recommended_total} {medication.unit} of {medication.name}"
         schedule = (
-            f"Take {rec_daily} {unit_singular} per day for {rec_days} day(s) "
-            f"({recommended_total} {medication.unit} total). Stop early if you feel better."
+            f"Take {rec_daily} {unit_singular} per day for {rec_days} day(s). "
+            "Stop early if you feel better."
         )
         rationale = (
             f"{prefix}Inventory has {stock} {medication.unit}. After reserving {crew_safety_reserve} {medication.unit} for {crew_count} astronauts "
@@ -845,23 +1051,41 @@ def _resolve_med_with_fallback(
     """Return preferred onboard medication if stock > 0, else first non-contraindicated fallback."""
     if not preferred_id:
         return None, None
-    primary = session.get(MedicationStockRow, preferred_id)
-    if primary is not None and primary.quantity > 0:
-        return primary, None
-
     dehydrated_or_nausea = (
         answers.get("hydration_intake") == "low"
         or signals["has_nausea"]
         or answers.get("orthostatic_bp_check") == "orthostatic"
+        or answers.get("sweating_autonomic_check") == "yes"
+        or signals["has_sweating"]
     )
+    primary = session.get(MedicationStockRow, preferred_id)
+    if primary is not None and primary.quantity > 0 and not (preferred_id == "ibuprofen_400mg" and dehydrated_or_nausea):
+        return primary, None
+
     for alt_id in FALLBACK_CHAIN.get(preferred_id, ()):
         if alt_id == "ibuprofen_400mg" and dehydrated_or_nausea:
             continue
         alt = session.get(MedicationStockRow, alt_id)
         if alt is not None and alt.quantity > 0:
             prim_name = primary.name if primary is not None else preferred_id
-            return alt, f"Switched from depleted {prim_name} to NASA ISS fallback {alt.name}."
+            reason = "dehydration/nausea precaution (Eyal et al. 2019)" if (preferred_id == "ibuprofen_400mg" and dehydrated_or_nausea) else "depleted stock"
+            return alt, f"Switched from {prim_name} ({reason}) to NASA ISS fallback {alt.name}."
     return primary, None
+
+
+def _with_cotreatment_guidance(
+    alloc: MedicationAllocationDTO,
+    condition_phrase: str,
+) -> MedicationAllocationDTO:
+    """State which co-occurring condition requires this medication and add stop-when-better guidance."""
+    if alloc.recommended_total_units <= 0:
+        return alloc
+    clean_schedule = alloc.dosage_schedule.replace(" Stop early if you feel better.", "").rstrip(".")
+    alloc.dosage_schedule = (
+        f"If you have {condition_phrase}: take together — {clean_schedule}. "
+        "Stop if you feel better."
+    )
+    return alloc
 
 
 def _build_co_treatments_and_basis(
@@ -883,22 +1107,30 @@ def _build_co_treatments_and_basis(
     secondary: list[MedicationAllocationDTO] = []
     used_ids = {primary_med_id} if primary_med_id else set()
 
-    # Co-symptom 1: Dehydration / Orthostatic dizziness alongside another leading condition (e.g. fever)
+    # Co-symptom 1: Dehydration / Orthostatic dizziness / Autonomic cold sweats alongside another leading condition (e.g. fever)
     if (
-        (answers.get("hydration_intake") == "low" or answers.get("orthostatic_bp_check") == "orthostatic")
+        (
+            answers.get("hydration_intake") == "low"
+            or answers.get("orthostatic_bp_check") == "orthostatic"
+            or answers.get("sweating_autonomic_check") == "yes"
+            or signals["has_sweating"]
+        )
         and "oral_rehydration_salts" not in used_ids
     ):
         ors_row, note = _resolve_med_with_fallback(session, "oral_rehydration_salts", signals, answers)
         if ors_row is not None and ors_row.quantity > 0:
             used_ids.add(ors_row.id)
             secondary.append(
-                compute_medication_allocation(
-                    medication=ors_row,
-                    crew_count=crew_count,
-                    remaining_days=remaining_days,
-                    outcome_title="Dehydration / Orthostatic Support",
-                    urgency="high",
-                    fallback_note=note,
+                _with_cotreatment_guidance(
+                    compute_medication_allocation(
+                        medication=ors_row,
+                        crew_count=crew_count,
+                        remaining_days=remaining_days,
+                        outcome_title="Dehydration / Orthostatic Support",
+                        urgency="high",
+                        fallback_note=note,
+                    ),
+                    "dehydration, orthostatic dizziness, or cold sweats",
                 )
             )
             basis.append(
@@ -913,17 +1145,42 @@ def _build_co_treatments_and_basis(
         if vest_row is not None and vest_row.quantity > 0:
             used_ids.add(vest_row.id)
             secondary.append(
-                compute_medication_allocation(
-                    medication=vest_row,
-                    crew_count=crew_count,
-                    remaining_days=remaining_days,
-                    outcome_title="Movement-Triggered Dizziness / Nausea",
-                    urgency="moderate",
-                    fallback_note=note,
+                _with_cotreatment_guidance(
+                    compute_medication_allocation(
+                        medication=vest_row,
+                        crew_count=crew_count,
+                        remaining_days=remaining_days,
+                        outcome_title="Movement-Triggered Dizziness / Nausea",
+                        urgency="moderate",
+                        fallback_note=note,
+                    ),
+                    "movement-triggered dizziness or nausea",
                 )
             )
             basis.append(
                 f"Co-Symptom Match (NASA ExMC SMS Protocol): Movement-worsened dizziness matched to {vest_row.name} from the ISS Oral Medication Pack."
+            )
+
+    # Co-symptom 2b: Non-vestibular acute nausea alongside fever/tachycardia
+    if signals["has_nausea"] and "ondansetron_8mg" not in used_ids and "meclizine_25mg" not in used_ids and len(secondary) < 2:
+        nau_row, note = _resolve_med_with_fallback(session, "ondansetron_8mg", signals, answers)
+        if nau_row is not None and nau_row.quantity > 0:
+            used_ids.add(nau_row.id)
+            secondary.append(
+                _with_cotreatment_guidance(
+                    compute_medication_allocation(
+                        medication=nau_row,
+                        crew_count=crew_count,
+                        remaining_days=remaining_days,
+                        outcome_title="Acute Nausea Support",
+                        urgency="moderate",
+                        fallback_note=note,
+                    ),
+                    "nausea or upset stomach",
+                )
+            )
+            basis.append(
+                "Co-Symptom Match (ISS Oral Pack Protocol): Active nausea alongside primary complaint matched to non-sedating Ondansetron 8 mg ODT."
             )
 
     # Co-symptom 3: Significant sleep disruption paired with another acute complaint
@@ -939,13 +1196,16 @@ def _build_co_treatments_and_basis(
         if slp_row is not None and slp_row.quantity > 0:
             used_ids.add(slp_row.id)
             secondary.append(
-                compute_medication_allocation(
-                    medication=slp_row,
-                    crew_count=crew_count,
-                    remaining_days=remaining_days,
-                    outcome_title="Sleep Recovery Support",
-                    urgency="moderate",
-                    fallback_note=note,
+                _with_cotreatment_guidance(
+                    compute_medication_allocation(
+                        medication=slp_row,
+                        crew_count=crew_count,
+                        remaining_days=remaining_days,
+                        outcome_title="Sleep Recovery Support",
+                        urgency="moderate",
+                        fallback_note=note,
+                    ),
+                    "poor sleep or sleep disruption",
                 )
             )
             basis.append(
@@ -960,6 +1220,14 @@ def _build_co_treatments_and_basis(
         basis.append(
             "Conservation Guardrail: Mild self-limiting symptoms are managed with rest/hydration first to preserve finite onboard medications."
         )
+
+    hc_conditions, hc_meds = _load_health_care_library()
+    hc_cond = hc_conditions.get(outcome_id)
+    if hc_cond:
+        basis.append(f"Offline Health Care Reference (health_care/): {hc_cond.get('plain_summary', '')}")
+    if primary_med_id and primary_med_id in hc_meds:
+        med_ref = hc_meds[primary_med_id]
+        basis.append(f"Offline Drug Guide ({med_ref.get('name', primary_med_id)}): {med_ref.get('adult_dosage', '')} {med_ref.get('warnings', '')}".strip())
     return secondary[:2], basis
 
 
@@ -979,10 +1247,11 @@ def evaluate_session_state(session: Session, row: InvestigationSessionRow) -> In
     turns = [TurnRecordDTO.model_validate(t) for t in (row.turns or [])]
     hypotheses = _score_hypotheses(signals, answers)
 
-    max_turns = 6
+    max_turns = 4
     next_spec = None if len(turns) >= max_turns else _select_next_question(signals, answers)
 
     if next_spec is not None:
+        outcome_id = hypotheses[0].id if hypotheses else None
         status: Literal["in_progress", "completed"] = "in_progress"
         top = hypotheses[0]
         assessment_title = f"Checking: {top.label}"
@@ -1041,6 +1310,18 @@ def evaluate_session_state(session: Session, row: InvestigationSessionRow) -> In
         clinical_basis = []
 
     dispensed_secondary_ids = list(answers.get("_dispensed_secondary", []))
+    deviation_count = (1 if signals["hr_elevated"] else 0) + (1 if signals["sleep_low"] else 0) + len(signals["symptoms"])
+    proactive_alert: str | None = None
+    if deviation_count >= 2 or signals["hr_critical"] or signals["has_sweating"]:
+        tags: list[str] = []
+        if signals["hr_elevated"] and check_in.hr is not None:
+            tags.append(f"HR {check_in.hr:.0f} bpm")
+        if signals["sleep_low"] and check_in.sleep is not None:
+            tags.append(f"Sleep {check_in.sleep:.1f}h")
+        if signals["symptoms"]:
+            tags.append(", ".join(signals["symptoms"]))
+        label = "Urgent check" if (signals["hr_critical"] or signals["has_sweating"]) else "Health check"
+        proactive_alert = f"{label} ({astronaut.id}: {' · '.join(tags)}) — answer these questions so MEDNAV can advise care and medication."
 
     row.status = status
     session.commit()
@@ -1068,6 +1349,8 @@ def evaluate_session_state(session: Session, row: InvestigationSessionRow) -> In
         dispensed_medication_id=row.dispensed_medication_id,
         dispensed_units=row.dispensed_units,
         dispensed_secondary_ids=dispensed_secondary_ids,
+        condition_id=outcome_id,
+        proactive_alert=proactive_alert,
     )
 
 
@@ -1161,19 +1444,34 @@ def submit_session_answer(
 
     answers = dict(row.answers or {})
     answers[body.question_id] = body.answer_value
+    if body.question_id == "mission_duration_check":
+        try:
+            chosen_days = (
+                int(round(body.numeric_value))
+                if body.numeric_value is not None
+                else int(body.answer_value)
+            )
+            chosen_days = max(1, min(3650, chosen_days))
+            cfg = ensure_mission_defaults(session)
+            cfg.remaining_days = chosen_days
+        except (TypeError, ValueError):
+            pass
     if body.numeric_value is not None:
         answers[f"{body.question_id}_numeric"] = body.numeric_value
         if body.question_id == "temperature_check":
             answers[body.question_id] = "elevated" if body.numeric_value >= 38.0 else "normal"
 
     turns = list(row.turns or [])
+    answer_lbl = option_map.get(answers[body.question_id], body.answer_value)
+    if body.question_id == "mission_duration_check" and body.numeric_value is not None:
+        answer_lbl = f"{max(1, min(3650, int(round(body.numeric_value))))} days"
     turns.append(
         TurnRecordDTO(
             turn=len(turns) + 1,
             question_id=spec.id,
             question_prompt=spec.prompt,
             answer_value=answers[body.question_id],
-            answer_label=option_map.get(answers[body.question_id], body.answer_value),
+            answer_label=answer_lbl,
             numeric_value=body.numeric_value,
             recorded_at=datetime.now(timezone.utc).isoformat(),
         ).model_dump()
@@ -1183,6 +1481,62 @@ def submit_session_answer(
     row.updated_at = datetime.now(timezone.utc)
     session.commit()
     return evaluate_session_state(session, row)
+
+
+def get_all_crew_proactive_alerts(session: Session) -> list[CrewProactiveAlertDTO]:
+    """Scan every crew member's latest daily check-in against pre-flight baseline."""
+    _load_preflight_baseline()
+    alerts: list[CrewProactiveAlertDTO] = []
+    astronauts = list(session.scalars(select(AstronautRow).order_by(AstronautRow.id)))
+    for astronaut in astronauts:
+        latest_ci = session.scalar(
+            select(CheckInRow)
+            .where(CheckInRow.astronaut_id == astronaut.id)
+            .order_by(CheckInRow.recorded_at.desc(), CheckInRow.id.desc())
+            .limit(1)
+        )
+        if latest_ci is None:
+            continue
+        _snapshot, signals = _extract_snapshot(latest_ci, astronaut)
+        deviation_count = (
+            (1 if signals["hr_elevated"] else 0)
+            + (1 if signals["sleep_low"] else 0)
+            + len(signals["symptoms"])
+        )
+        urgent = bool(signals["hr_critical"] or signals["has_sweating"] or signals["has_visual"])
+        if deviation_count < 2 and not urgent:
+            continue
+
+        tags: list[str] = []
+        if signals["hr_elevated"] and latest_ci.hr is not None:
+            tags.append(f"HR {latest_ci.hr:.0f} bpm")
+        if signals["sleep_low"] and latest_ci.sleep is not None:
+            tags.append(f"Sleep {latest_ci.sleep:.1f}h")
+        if signals["symptoms"]:
+            tags.append(", ".join(signals["symptoms"]))
+
+        latest_sess = session.scalar(
+            select(InvestigationSessionRow)
+            .where(
+                InvestigationSessionRow.astronaut_id == astronaut.id,
+                InvestigationSessionRow.check_in_id == latest_ci.id,
+            )
+            .order_by(InvestigationSessionRow.created_at.desc(), InvestigationSessionRow.id.desc())
+            .limit(1)
+        )
+        session_status = latest_sess.status if latest_sess is not None else None
+        needs_investigation = latest_sess is None or latest_sess.status != "completed"
+        alerts.append(
+            CrewProactiveAlertDTO(
+                astronaut_id=astronaut.id,
+                deviation_count=deviation_count,
+                summary_tags=tags,
+                urgent=urgent,
+                needs_investigation=needs_investigation,
+                session_status=session_status,
+            )
+        )
+    return alerts
 
 
 def dispense_session_allocation(
