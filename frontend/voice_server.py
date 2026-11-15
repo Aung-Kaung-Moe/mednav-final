@@ -1,6 +1,8 @@
 import io
 import os
+import re
 import wave
+from collections import Counter
 import numpy as np
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +18,8 @@ CHECKIN_HOTWORDS = (
     "read my recommendation, what is my heart rate, what data is missing"
 )
 
+LIVE_HOTWORDS = "Hey MEDNAV, MEDNAV, health check, stop"
+
 app = FastAPI(title="MEDNAV Local Voice-to-Text Service")
 
 app.add_middleware(
@@ -30,8 +34,8 @@ whisper_model = WhisperModel(MODEL_ID, device="cpu", compute_type="int8")
 print(f"[MEDNAV Voice] Model {MODEL_ID} ready.")
 
 
-def decode_wav_bytes(raw_bytes: bytes) -> np.ndarray | io.BytesIO:
-    """Decode 16-bit PCM WAV, resample to 16kHz mono float32, and normalize quiet mic levels."""
+def decode_wav_bytes(raw_bytes: bytes, normalize: bool = True) -> np.ndarray | io.BytesIO:
+    """Decode 16-bit PCM WAV and resample to 16kHz mono float32."""
     try:
         with wave.open(io.BytesIO(raw_bytes), "rb") as wf:
             channels = wf.getnchannels()
@@ -49,12 +53,22 @@ def decode_wav_bytes(raw_bytes: bytes) -> np.ndarray | io.BytesIO:
                     dst_x = np.linspace(0.0, 1.0, target_len, endpoint=False)
                     audio = np.interp(dst_x, src_x, audio).astype(np.float32)
                 peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
-                if 0.01 < peak < 0.5:
+                if normalize and 0.01 < peak < 0.5:
                     audio = np.clip(audio * (0.7 / peak), -1.0, 1.0).astype(np.float32)
                 return audio
     except Exception:
         pass
     return io.BytesIO(raw_bytes)
+
+
+def reliable_live_text(text: str, duration_s: float) -> bool:
+    """Reject short-clip loops and implausibly long transcripts before UI dispatch."""
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    if not words or len(text) > max(80, int(duration_s * 35)):
+        return False
+    if len(words) >= 8 and Counter(words).most_common(1)[0][1] / len(words) >= 0.65:
+        return False
+    return True
 
 
 @app.get("/api/v1/voice/status")
@@ -83,27 +97,41 @@ async def transcribe_audio(
         raise HTTPException(status_code=400, detail="Empty or too short audio payload.")
 
     try:
-        audio_input = decode_wav_bytes(raw_bytes)
+        # Live microphone noise should not be amplified into apparent speech.
+        audio_input = decode_wav_bytes(raw_bytes, normalize=not segment_mode)
         segments, info = whisper_model.transcribe(
             audio_input,
             language="en",
             beam_size=3 if segment_mode else 5,
             temperature=0.0,
             condition_on_previous_text=False,
-            hotwords=CHECKIN_HOTWORDS,
-            vad_filter=not segment_mode,
+            max_new_tokens=48 if segment_mode else None,
+            hotwords=LIVE_HOTWORDS if segment_mode else CHECKIN_HOTWORDS,
+            vad_filter=True,
             vad_parameters={
                 "threshold": 0.35,
-                "min_silence_duration_ms": 500,
-                "speech_pad_ms": 350,
+                "min_speech_duration_ms": 100 if segment_mode else 250,
+                "min_silence_duration_ms": 300 if segment_mode else 500,
+                "speech_pad_ms": 150 if segment_mode else 350,
             },
-            initial_prompt=(
+            initial_prompt=None if segment_mode else (
                 "Astronaut health check-in: no symptoms, headache, dizziness, fatigue, nausea, "
                 "muscle discomfort, heart rate 72 bpm, sleep 7.5 hours, "
                 "blood pressure 120 over 80 mmHg, systolic, diastolic, unknown."
             ),
         )
-        text = " ".join(seg.text.strip() for seg in segments).strip()
+        accepted = [
+            seg.text.strip() for seg in segments
+            if not segment_mode or (
+                seg.avg_logprob >= -1.2
+                and seg.no_speech_prob < 0.65
+                and seg.compression_ratio < 2.0
+                and reliable_live_text(seg.text, getattr(info, "duration", 0.0))
+            )
+        ]
+        text = " ".join(accepted).strip()
+        if segment_mode and not reliable_live_text(text, getattr(info, "duration", 0.0)):
+            text = ""
         return {
             "text": text,
             "model": MODEL_ID,
@@ -117,4 +145,4 @@ async def transcribe_audio(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("MEDNAV_VOICE_PORT", "8002")), log_level="info")

@@ -60,24 +60,41 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
   const onSpeech=useRef<(value:string)=>Promise<void>>(async()=>{})
   const listeningGeneration=useRef(0)
   const starting=useRef(false)
+  const speaking=useRef(false)
+  const speechRun=useRef(0)
+  const interruptedSpeech=useRef<number|null>(null)
+  const stopping=useRef(false)
+  const pendingUtterance=useRef<string|null>(null)
+
+  function flushPendingUtterance(){
+    if(handling.current||speaking.current||!pendingUtterance.current)return
+    const next=pendingUtterance.current
+    pendingUtterance.current=null
+    queueMicrotask(()=>{void onSpeech.current(next)})
+  }
 
   const setCurrentDraft=(next:VoiceDraft)=>{draftRef.current=next;setDraft(next)}
   const setCurrentStep=(next:VoiceStep)=>{stepRef.current=next;setStep(next)}
   const setActive=(value:boolean)=>{awakeRef.current=value;setAwake(value)}
 
   const say=useCallback(async(text:string)=>{
+    const run=++speechRun.current
     setReplyText(text)
     lastSpoken.current=text
-    if(recog.current)recog.current.paused=true
+    speaking.current=true
+    recog.current?.setInterruptMode(true)
     try {
       const played=await speaker.current.say(text)
-      setTtsMissing(!played)
+      if(speechRun.current===run && interruptedSpeech.current!==run)setTtsMissing(!played)
     }finally{
-      // Prevent the microphone from hearing its own speaker.
-      await new Promise(resolve=>setTimeout(resolve,350))
-      if(recog.current)recog.current.paused=false
+      if(speechRun.current===run){
+        speaking.current=false
+        // Drop buffered speaker audio before accepting ordinary commands.
+        recog.current?.setInterruptMode(false)
+        flushPendingUtterance()
+      }
     }
-  },[listening])
+  },[])
 
   const ask=useCallback(async(next:QuestionStep,d:VoiceDraft=draftRef.current)=>{
     setCurrentStep(next)
@@ -193,20 +210,40 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
 
   const process=useCallback(async(utterance:string)=>{
     const text=utterance.trim()
+    const wait=/^(?:wait|wait mednav|mednav wait|hold on|stop talking)[.!?, ]*$/i.test(text)
+    const stop=['stop','stop listening','stop microphone'].includes(normalized(text))
+    if(speaking.current && !stop){
+      const wake=parseWake(text)
+      const recognized=matchCommand(wake.woke&&wake.remainder?wake.remainder:text)
+      if(!wait && !wake.woke && !recognized && !stepRef.current)return
+      interruptedSpeech.current=speechRun.current
+      speaker.current.stop()
+      setTranscript(text)
+      if(wait)setReplyText('Paused. I’m listening.')
+      else {pendingUtterance.current=text;flushPendingUtterance()}
+      return
+    }
+    if(wait){setTranscript(text);setReplyText('Paused. I’m listening.');return}
+    if(stop){
+      if(stopping.current)return
+      stopping.current=true
+      try{
+        if(speaking.current){interruptedSpeech.current=speechRun.current;speaker.current.stop()}
+        pendingUtterance.current=null
+        listeningGeneration.current++
+        const instance=recog.current;recog.current=null
+        setTranscript(text);setReplyText('Microphone stopped. Select Voice AI to listen again.')
+        setListening(false);setActive(false);setCurrentStep(null);setPulseRunning(false)
+        await instance?.stop()
+        setOpen(false)
+      }finally{stopping.current=false}
+      return
+    }
     if(!text||handling.current||isSaving) return
     handling.current=true
     setProcessing(true)
     setTranscript(text);setError('')
     try {
-      if(['stop','stop listening','stop microphone'].includes(normalized(text))){
-        listeningGeneration.current++
-        const instance=recog.current;recog.current=null
-        setListening(false);setActive(false);setCurrentStep(null);setPulseRunning(false)
-        await instance?.stop()
-        setOpen(false)
-        await say('Microphone stopped. Select Voice AI to listen again.')
-        return
-      }
       // A safety escalation prompt is not a diagnosis or automatic emergency flag.
       if(/\b(emergency|severe chest pain|unconscious|can't breathe|cannot breathe|difficulty breathing|loss of consciousness)\b/i.test(text)){
         setCurrentStep(null);setPulseRunning(false);await say('Possible emergency language heard. Do not rely on this prototype for triage. Follow the mission-approved emergency protocol and seek medical officer review immediately. No treatment has been selected.');return
@@ -215,6 +252,11 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
       if(wake.woke){setOpen(true);setActive(true);if(!wake.remainder) {await say(`Hello, astronaut ${crew}. I am MEDNAV. Would you like to start a health check?`);return}}
       const textToMatch=wake.woke&&wake.remainder?wake.remainder:text
       const directIntent=matchCommand(textToMatch)
+      if(directIntent==='wake' && !wake.woke){
+        setOpen(true);setActive(true)
+        await say(`Hello, astronaut ${crew}. I am MEDNAV. Would you like to start a health check?`)
+        return
+      }
       if(!awakeRef.current && !wake.woke) {
         if(directIntent==='start_check') {setOpen(true);setActive(true)}
         else return
@@ -256,7 +298,7 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
          else {setActive(false);setCurrentStep(null);setPulseRunning(false);await say('Voice session closed. Say Hey MEDNAV to reactivate.')}break
        default:await say('I did not confidently recognize that command. Please try: start health check, heart rate, missing data, equipment, or read my recommendation.');break
       }
-    } finally {handling.current=false;setProcessing(false)}
+    } finally {handling.current=false;setProcessing(false);flushPendingUtterance()}
   },[crew,mode,onNavigate,say,ask,readHistory,handleQuestion,isSaving,investigate])
   useEffect(()=>{
     // Never read the previous astronaut's recommendation or manually entered value.
@@ -330,7 +372,7 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
     {open&&<section className="voice-panel" aria-label="MEDNAV voice assistant">
       <div className="voice-panel-head"><div><span className="voice-overline">LOCAL MISSION ASSISTANT</span><strong><Activity size={17}/> MEDNAV VOICE</strong></div><button aria-label="Close assistant" onClick={()=>setOpen(false)}><X size={17}/></button></div>
       <div className="voice-state"><span className={`voice-indicator ${listening?'online':''}`}/>{loading?'CONNECTING TO LOCAL VOICE SERVICE':processing?'MEDNAV RESPONDING':listening?step?'LISTENING FOR ANSWER':awake?'LISTENING':'SAY “HEY MEDNAV”':'MICROPHONE OFF'}<small>CREW {crew} · {mode==='demo'?'SYNTHETIC DEMO':'LOCAL API'}</small></div>
-      <p className="voice-hint">{listening?'Say “Hey MEDNAV” to call me · “Stop” turns off the microphone.':'Open Voice AI again to restart listening.'}</p>
+      <p className="voice-hint">{listening?'“Hey MEDNAV” to call · Speak to interrupt · “Stop” to turn off the microphone.':'Open Voice AI again to restart listening.'}</p>
       <div className="voice-dialog"><div className="voice-response" aria-live="polite"><small>MEDNAV RESPONSE</small><p>{replyText}</p></div>{transcript&&<div className="voice-transcript"><small>HEARD</small><p>{transcript}</p></div>}</div>
       {step&&<div className="voice-question-state"><strong>{step==='pulse_beats'?'PULSE COUNT ENTRY':`QUESTION: ${step.toUpperCase().replace('_',' ')}`}</strong><p>{step==='confirm'?'Confirmation required before saving.':step==='pulse_beats'?'Say your manually counted number of beats.':QUESTIONS[step]}</p><p className="voice-mini">Current draft: {draft.symptoms.join(', ')||'no symptoms'} · HR {draft.measurements.resting_hr_bpm??'Unknown'} · Sleep {draft.measurements.sleep_hours??'Unknown'}</p></div>}
       {pulseRunning&&<div className="voice-timer"><Timer size={18}/><strong>Manual pulse timer: {pulseSeconds}s</strong><button onClick={()=>{setPulseRunning(false);setCurrentStep(null);setReplyText('Pulse timer cancelled. Nothing was measured or saved.')}}>Cancel timer</button></div>}
