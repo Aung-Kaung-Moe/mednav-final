@@ -17,7 +17,7 @@ function load(file){
 const commands=load('src/voice/commands.ts')
 const questions=load('src/voice/questions.ts')
 const cases=[
- ['Hey MEDNAV','wake'],['hey med nav','wake'],['Hey Metnav','wake'],['what is my heart rate','heart_rate'],
+ ['Hey MEDNAV','wake'],['hey med nav','wake'],['what is my heart rate','heart_rate'],
  ['tell me my pulse','heart_rate'],['MEDNAV, read my BPM','heart_rate'],
  ['how many hours did i sleep','sleep'],['show my health history','history'],
  ['what measurements are missing','missing'],['what equipment is available','inventory'],

@@ -76,6 +76,12 @@ function Start-CheckedService($port,$url,$name,$file,$arguments,$directory) {
  throw "$name did not become ready. Inspect .demo-runtime logs; use this script -Stop to stop owned processes."
 }
 Start-CheckedService 8000 'http://127.0.0.1:8000/api/v1/healthz' 'backend' $PythonPath @('-m','uvicorn','app.main:app','--host','127.0.0.1','--port','8000') (Join-Path $project 'backend')
+$piperModel = Join-Path $project 'backend/models/piper/en_US-lessac-medium.onnx'
+if (Test-Path $piperModel) {
+  Start-CheckedService 5000 'http://127.0.0.1:5000/health' 'piper' $PythonPath @('piper_server.py') (Join-Path $project 'backend')
+} else {
+  Write-Warning 'Piper voice model missing; spoken TTS output disabled.'
+}
 $node=(Get-Command node.exe).Source
 $vite=Join-Path $project 'frontend/node_modules/vite/bin/vite.js'
 Start-CheckedService 5173 'http://127.0.0.1:5173/' 'frontend' $node @("`"$vite`"",'--host','127.0.0.1','--port','5173') (Join-Path $project 'frontend')

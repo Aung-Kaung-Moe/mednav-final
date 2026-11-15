@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowUpRight,
   ArrowLeft,
-  SlidersHorizontal,
-  RotateCcw,
   FileText,
   HeartPulse,
   Stethoscope,
@@ -73,13 +71,6 @@ type Props = {
   go: (p: number) => void;
   voiceResponse: InvestigationResponse | null;
 };
-
-const labels = [
-  'BP monitor available',
-  'BP record available',
-  'Earth link online',
-  'Manual emergency override',
-];
 
 const evidence = {
   readings: {
@@ -238,7 +229,6 @@ export function MissionConsole({
 }: Props) {
   const history = (live ? liveHistory : fixtureHistory) as typeof fixtureHistory;
   const [selected, setSelected] = useState<keyof typeof evidence>('bp');
-  const [drawer, setDrawer] = useState(false);
   const [dayIndex, setDayIndex] = useState(() => {
     const selectedIndex = liveRecord ? liveRecords.findIndex(r=>r.id===liveRecord.id) : -1;
     return selectedIndex>=0?selectedIndex:Math.max(0,history.length-1);
@@ -258,7 +248,7 @@ export function MissionConsole({
   const [sex, setSex] = useState<AnatomySex>('male');
   const [modelStatus, setModelStatus] = useState<AnatomyModelStatus>('loading');
 
-  // Purely render the engine/fixture response — no separate medical decision logic in the frontend.
+  // Purely render the engine/fixture response â€” no separate medical decision logic in the frontend.
   const response = live
     ? liveResponse
     : voiceResponse && [2, 5].includes(page)
@@ -302,9 +292,6 @@ export function MissionConsole({
     crew.ocularCheck === null ? 'Microgravity ocular check' : null,
     ...(response?.missing_data ?? ['No scenario record']),
   ].filter(Boolean);
-
-  const toggleFlag = (i: number) =>
-    {if(live && i===1)return;setFlags(flags.map((v, j) => (j === i ? !v : v)));};
 
   const knownVitalsCount =
     (crew.hr !== null ? 1 : 0) +
@@ -371,10 +358,10 @@ export function MissionConsole({
           <div className="dashboard-header-bar">
             <div className="dash-title-group">
               <div className="wide-planetary-label left-aligned">
-                C R E W &nbsp; H E A L T H &nbsp; · &nbsp; D A Y &nbsp; 1 8 0
+                C R E W &nbsp; H E A L T H &nbsp; Â· &nbsp; D A Y &nbsp; 1 8 0
               </div>
               <h1 className="section-sans-headline">
-                {crew.id} · {crew.role}
+                {crew.id} Â· {crew.role}
               </h1>
             </div>
 
@@ -553,12 +540,15 @@ export function MissionConsole({
 
                 <div className="symptoms-compact-list">
                   {crew.symptoms.length > 0 ? (
-                    crew.symptoms.map((sym) => (
-                      <div className="symptom-line" key={sym}>
-                        <span>{sym}</span>
-                        <span className="kpi-status-pill coral">ACTIVE</span>
-                      </div>
-                    ))
+                    crew.symptoms.map((sym) => {
+                      const label = sym.replace(/\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, '');
+                      return (
+                        <div className="symptom-line" key={sym}>
+                          <span>{label}</span>
+                          <span className="kpi-status-pill coral">ACTIVE</span>
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="symptom-line">
                       <span>None reported</span>
@@ -711,7 +701,7 @@ export function MissionConsole({
                     {live && trendMode === 'hr' ? 'S A V E D  H E A L T H  H I S T O R Y' : <>7 - D A Y &nbsp; T R E N D</>}
                   </span>
                   <span className="trend-sub-val">
-                    {crew.id} · {live ? (trendMode === 'hr' ? 'Timestamped SQLite records (synthetic)' : 'D174–D180 (illustrative)') : 'D174–D180'}
+                    {crew.id} Â· {live ? (trendMode === 'hr' ? 'Timestamped SQLite records (synthetic)' : 'D174â€“D180 (illustrative)') : 'D174â€“D180'}
                   </span>
                 </div>
 
@@ -741,7 +731,7 @@ export function MissionConsole({
                     }`}
                     onClick={() => setTrendMode('ug')}
                   >
-                    μG Exercise
+                    Î¼G Exercise
                   </button>
                 </div>
               </div>
@@ -829,7 +819,7 @@ export function MissionConsole({
             I N C I D E N T &nbsp; R E P O R T
           </div>
           <span className="hairline-status-tag">
-            {live?'LOCAL PREVIEW · NOT TRANSMITTED':'PENDING GROUND REVIEW · OFFLINE'}
+            {live?'LOCAL PREVIEW Â· NOT TRANSMITTED':'PENDING GROUND REVIEW Â· OFFLINE'}
           </span>
         </div>
 
@@ -935,450 +925,5 @@ export function MissionConsole({
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // VIEW 3: MISSION WHAT-IF LAB
-  // ---------------------------------------------------------------------------
-  if (page === 3) {
-    return (
-      <div className="mission-console space-subpage" data-testid={live?'engine-status':undefined} data-status={view.status} aria-label={live?'Live investigation result':undefined}>
-        <div className="subpage-top-bar">
-          <button
-            type="button"
-            className="hairline-pill-btn"
-            onClick={() => go(0)}
-          >
-            <ArrowLeft size={16} /> Overview
-          </button>
-          <div className="wide-planetary-label">
-            W H A T - I F &nbsp; S C E N A R I O &nbsp; L A B
-          </div>
-          <button
-            type="button"
-            className="hairline-pill-btn"
-            onClick={() => setFlags([false, false, false, false])}
-          >
-            <RotateCcw size={14} /> Reset
-          </button>
-        </div>
-
-        <div className="asymmetric-workspace-grid">
-          <section className="left-telemetry-column" aria-label="What-if controls">
-            <h1 className="section-sans-headline">
-              Simulate Conditions
-            </h1>
-            <p className="telemetry-summary-copy">
-              {live
-                ? 'BP controls update shared onboard inventory in SQLite. Earth link and manual override are simulation context; saved measurements are unchanged.'
-                : 'Toggle missing measurements, blood-pressure monitor availability, and manual safety override to compare deterministic next-check selection.'}
-            </p>
-
-            <div className="preset-hairline-row">
-              <button
-                type="button"
-                className="hairline-pill-btn"
-                onClick={() => setFlags([false, false, false, false])}
-              >
-                Needs Review (Monitor Blocked)
-              </button>
-              <button
-                type="button"
-                className="hairline-pill-btn"
-                onClick={() => setFlags([false, false, true, false])}
-              >
-                {live?'Earth link online (simulation context)':'Insufficient Evidence (next_check: null)'}
-              </button>
-              <button
-                type="button"
-                className="hairline-pill-btn"
-                onClick={() => setFlags([true, false, false, false])}
-              >
-                BP Monitor Ready
-              </button>
-              <button
-                type="button"
-                className="hairline-pill-btn"
-                disabled={live}
-                title={live?'Read-only in live mode. Save a check-in to change blood-pressure data.':undefined}
-                onClick={() => setFlags([false, true, false, false])}
-              >
-                BP Recorded
-              </button>
-              <button
-                type="button"
-                className="hairline-pill-btn"
-                onClick={() => setFlags([false, false, false, true])}
-              >
-                Escalate (Emergency Override)
-              </button>
-            </div>
-
-            <div className="hairline-telemetry-list">
-              {labels.map((l, i) => (
-                <button
-                  key={l}
-                  role="switch"
-                  disabled={live && i===1}
-                  aria-checked={flags[i]}
-                  aria-label={l}
-                  onClick={() => toggleFlag(i)}
-                  className={`telemetry-switch-row ${flags[i] ? 'active' : ''}`}
-                >
-                  <span>{l}</span>
-                  <span className="switch-state-indicator">
-                    {flags[i] ? 'ACTIVE ◆' : 'INACTIVE —'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <aside className="right-frosted-sheet" aria-label="Decision trace">
-            <div className="wide-planetary-label left-aligned">
-              {view.statusBadge}
-            </div>
-
-            <h2>{view.nextCheckTitle}</h2>
-
-            <dl className="hairline-telemetry-list compact-list">
-              <div className="telemetry-kv-row compact">
-                <dt>Status:</dt>
-                <dd>{view.status}</dd>
-              </div>
-              <div className="telemetry-kv-row compact">
-                <dt>Blood Pressure:</dt>
-                <dd className={!bp ? 'unknown-val' : ''}>
-                  {bp ? `${bp} mmHg` : 'Unknown'}
-                </dd>
-              </div>
-              <div className="telemetry-kv-row compact">
-                <dt>BP Monitor:</dt>
-                <dd>{monitor ? 'Available' : 'Unavailable'}</dd>
-              </div>
-              <div className="telemetry-kv-row compact">
-                <dt>Required Equipment:</dt>
-                <dd>
-                  {view.nextCheckEquipment.length > 0
-                    ? view.nextCheckEquipment.join(', ')
-                    : view.hasNextCheck ? 'None required' : 'None (next_check: null)'}
-                </dd>
-              </div>
-              <div className="telemetry-kv-row compact">
-                <dt>Scenario ID:</dt>
-                <dd>{view.id}</dd>
-              </div>
-              {live&&<><div className="telemetry-kv-row compact"><dt>Missing measurements:</dt><dd>{view.missingData.join(', ')||'None returned'}</dd></div><div className="telemetry-kv-row compact"><dt>Medical-officer review:</dt><dd>{view.reviewLabel}</dd></div><div className="telemetry-kv-row compact"><dt>Safety flags:</dt><dd>{view.safetyFlags.join(' · ')||'None returned'}</dd></div></>}
-            </dl>
-
-            <div className="trace-copy-block">
-              <span className="micro-label">WHY SELECTED</span>
-              <p>{view.selectedExplanation}</p>
-              {live&&<p className="sheet-footnote">{view.observationsList.join(' · ')}</p>}
-            </div>
-
-            <div className="trace-copy-block">
-              <span className="micro-label">WHY EXCLUDED</span>
-              <p>{view.excludedExplanation}</p>
-            </div>
-
-            <button
-              type="button"
-              className="ghost-rect-cta full-width"
-              onClick={() => go(5)}
-            >
-              <span>View Incident Report</span>
-              <ArrowUpRight size={18} />
-            </button>
-          </aside>
-        </div>
-      </div>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // VIEW 2: HEALTH INVESTIGATION (EVIDENCE & NEXT-CHECK NAVIGATION)
-  // ---------------------------------------------------------------------------
-  return (
-    <div className="mission-console space-subpage" data-testid={live ? 'engine-status' : undefined} data-status={view.status} aria-label={live ? 'Live investigation result' : undefined}>
-      <div className="subpage-top-bar">
-        <button
-          type="button"
-          className="hairline-pill-btn"
-          onClick={() => go(0)}
-        >
-          <ArrowLeft size={15} /> Overview
-        </button>
-
-        <div className="wide-planetary-label">
-          H E A L T H &nbsp; I N V E S T I G A T I O N &nbsp; · &nbsp;{' '}
-          {crew.id.toUpperCase()}
-        </div>
-
-        <button
-          type="button"
-          className="hairline-pill-btn"
-          aria-expanded={drawer}
-          onClick={() => setDrawer(!drawer)}
-        >
-          <SlidersHorizontal size={15} />
-          {drawer ? 'Close What-If' : 'What-If Controls'}
-        </button>
-      </div>
-
-      {drawer && (
-        <section className="orbital-scenario-drawer" aria-label="What-if controls">
-          <div className="drawer-switches-grid">
-            {labels.map((l, i) => (
-              <button
-                key={l}
-                role="switch"
-                disabled={live && i===1}
-                aria-checked={flags[i]}
-                aria-label={l}
-                onClick={() => toggleFlag(i)}
-                className={`telemetry-switch-row ${flags[i] ? 'active' : ''}`}
-              >
-                <strong>{l}</strong>
-                <span className="switch-state-indicator">
-                  {flags[i] ? 'ON ◆' : 'OFF —'}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="drawer-reset-bar">
-            <button
-              type="button"
-              className="hairline-pill-btn"
-              onClick={() => setFlags([false, false, false, false])}
-            >
-              Reset to original
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* Crew Snapshot Strip */}
-      <section className="inv-snapshot-grid" aria-label="Crew telemetry summary">
-        <div className="inv-stat-card">
-          <span className="inv-stat-label">CREW MEMBER</span>
-          <strong>{crew.id}</strong>
-          <small>{crew.role}</small>
-        </div>
-        <div className="inv-stat-card">
-          <span className="inv-stat-label">HEART RATE</span>
-          <strong className={crew.hr === null ? 'unknown-val' : ''}>
-            {crew.hr !== null ? `${crew.hr} bpm` : 'Unknown'}
-          </strong>
-          <small>Baseline {crew.baseline} bpm</small>
-        </div>
-        <div className="inv-stat-card">
-          <span className="inv-stat-label">BLOOD PRESSURE</span>
-          <strong className={!bp ? 'unknown-val' : ''}>
-            {bp ? `${bp} mmHg` : 'Unknown'}
-          </strong>
-          <small>{monitor ? 'Monitor available' : 'Monitor unavailable'}</small>
-        </div>
-        <div className="inv-stat-card">
-          <span className="inv-stat-label">RADIATION / ARED</span>
-          <strong className={crew.radiationDailyMsv === null ? 'unknown-val' : ''}>
-            {crew.radiationDailyMsv !== null
-              ? `${crew.radiationDailyMsv} mSv/d`
-              : 'Unknown'}
-          </strong>
-          <small>
-            Exercise{' '}
-            {crew.countermeasureMin !== null
-              ? `${crew.countermeasureMin}/${crew.countermeasureTargetMin} min`
-              : 'Unknown'}
-          </small>
-        </div>
-      </section>
-
-      {/* Main Investigation Workspace */}
-      <div className="asymmetric-workspace-grid inv-workspace">
-        <section className="left-telemetry-column" aria-label="Evidence tiers">
-          <div className="inv-section-head">
-            <h1 className="section-sans-headline">Evidence &amp; Routing</h1>
-            <p className="telemetry-summary-copy">
-              Select any tier to inspect how recorded observations, missing data,
-              and equipment constraints shape the next check.
-            </p>
-          </div>
-
-          <div className="orbital-evidence-stack">
-            <div
-              className={`evidence-stage-card ${
-                focus.links.includes('known') ? 'linked' : ''
-              }`}
-            >
-              <div className="stage-card-head">
-                <span>01 · KNOWN OBSERVATIONS</span>
-                <span>RECORDED</span>
-              </div>
-              <button
-                type="button"
-                className={`evidence-item ${
-                  selected === 'readings' ? 'chosen' : ''
-                }`}
-                onClick={() => setSelected('readings')}
-                aria-pressed={selected === 'readings'}
-              >
-                <span>
-                  <strong>
-                    Vitals, radiation dosimetry &amp; microgravity load
-                  </strong>
-                  <small>
-                    HR {crew.hr ?? 'Unknown'} · Sleep {crew.sleep ?? 'Unknown'}{' '}
-                    · Rad{' '}
-                    {crew.radiationDailyMsv !== null
-                      ? `${crew.radiationDailyMsv} mSv/d`
-                      : 'Unknown'}{' '}
-                    · ARED{' '}
-                    {crew.countermeasureMin !== null
-                      ? `${crew.countermeasureMin}m`
-                      : 'Unknown'}
-                  </small>
-                </span>
-                <ArrowUpRight size={16} />
-              </button>
-            </div>
-
-            <div
-              className={`evidence-stage-card missing-stage ${
-                focus.links.includes('unknown') ? 'linked' : ''
-              }`}
-            >
-              <div className="stage-card-head">
-                <span>02 · MISSING &amp; EQUIPMENT</span>
-                <span>{missing.length ? 'INCOMPLETE' : 'COMPLETE'}</span>
-              </div>
-              <button
-                type="button"
-                className={`evidence-item ${selected === 'bp' ? 'chosen' : ''}`}
-                onClick={() => setSelected('bp')}
-                aria-pressed={selected === 'bp'}
-              >
-                <span>
-                  <strong>
-                    {live ? 'Missing recorded measurements' : 'Blood pressure & microgravity ocular check'}
-                  </strong>
-                  <small className={!bp || !crew.ocularCheck ? 'unknown-val' : ''}>
-                    {live
-                      ? view.missingData.join(', ') || 'No missing measurements returned.'
-                      : <>BP: {bp ? `${bp} mmHg` : 'Unknown'} · Ocular: {crew.ocularCheck ?? 'Unknown'}</>}
-                  </small>
-                </span>
-                <ArrowUpRight size={16} />
-              </button>
-
-              <button
-                type="button"
-                className={`resource-link ${monitor ? 'available ' : ''}${
-                  selected === 'resources' ? 'chosen' : ''
-                }`}
-                onClick={() => setSelected('resources')}
-                aria-pressed={selected === 'resources'}
-              >
-                <span>
-                  {live
-                    ? view.resourceConstraintsList.join(' · ') || 'No resource constraints returned.'
-                    : <>{monitor ? 'BP monitor available' : 'Blocked: BP monitor unavailable'} · Ultrasound: {ultrasoundAvailable ? 'Available' : 'Unavailable'}</>}
-                </span>
-                <ArrowUpRight size={15} />
-              </button>
-            </div>
-
-            <div
-              className={`evidence-stage-card next-stage ${
-                view.status === 'escalate' ? 'escalation ' : ''
-              }${focus.links.includes('next') ? 'linked' : ''}`}
-            >
-              <div className="stage-card-head">
-                <span>03 · RECOMMENDED NEXT CHECK</span>
-                <span>
-                  {view.status === 'escalate'
-                    ? 'ESCALATED'
-                    : view.hasNextCheck
-                    ? 'FEASIBLE'
-                    : 'NEXT_CHECK: NULL'}
-                </span>
-              </div>
-              <button
-                type="button"
-                className={`evidence-item ${
-                  selected === 'next' ? 'chosen' : ''
-                }`}
-                onClick={() => setSelected('next')}
-                aria-pressed={selected === 'next'}
-              >
-                <span>
-                  <strong>{view.nextCheckTitle}</strong>
-                  <small>
-                    Status: {view.status} ·{' '}
-                    {live
-                      ? `Medical-officer review: ${view.reviewLabel}`
-                      : view.status === 'escalate'
-                      ? 'Manual emergency override'
-                      : 'Medical officer review required'}
-                  </small>
-                </span>
-                <ArrowUpRight size={16} />
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <aside className="right-frosted-sheet decision-trace inv-decision-panel" aria-label="Decision trace">
-          <div className="trace-header-line">
-            <span className="wide-planetary-label left-aligned">
-              D E C I S I O N &nbsp; T R A C E
-            </span>
-            <span
-              className={
-                'trace-status ' +
-                (view.status === 'escalate' ? 'escalation' : '')
-              }
-            >
-              {view.statusBadge}
-            </span>
-          </div>
-
-          <h2>{view.nextCheckTitle}</h2>
-
-          <div className="selection-context" aria-live="polite">
-            <strong>{focus.title}</strong>
-            <p>{focus.text}</p>
-          </div>
-
-          <div className="trace-section">
-            <span className="micro-label">WHY SELECTED</span>
-            <p>{view.selectedExplanation}</p>
-          </div>
-
-          <div className="trace-section">
-            <span className="micro-label">WHY EXCLUDED</span>
-            <p>{view.excludedExplanation}</p>
-          </div>
-
-          <div className="trace-section">
-            <span className="micro-label">REQUIRED EQUIPMENT</span>
-            <p>
-              {view.nextCheckEquipment.length > 0
-                ? view.nextCheckEquipment.join(', ')
-                : 'None'}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            className="ghost-rect-cta full-width inv-report-cta"
-            onClick={() => go(5)}
-          >
-            <FileText size={16} />
-            <span>Open Incident Report</span>
-            <ArrowUpRight size={16} />
-          </button>
-        </aside>
-      </div>
-    </div>
-  );
+  return null;
 }

@@ -1,16 +1,5 @@
 type OnResult = (text: string) => void;
 
-function plausibleTranscript(text: string, durationSeconds: number): boolean {
-  const words = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-  if (!words.length || text.length > Math.max(80, durationSeconds * 35)) return false;
-  if (words.length >= 8) {
-    const counts = new Map<string, number>();
-    for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
-    if (Math.max(...counts.values()) / words.length >= 0.65) return false;
-  }
-  return true;
-}
-
 function wav(samples: Float32Array, rate: number): Blob {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
@@ -45,18 +34,20 @@ export class OfflineRecognizer {
   private busy = false;
   private active = false;
   private generation = 0;
-  private interruptMode = false;
   public paused = false;
 
   constructor(private onText: OnResult, private onError: (message: string) => void = () => {}) {}
 
   async start() {
     if (this.active) return;
-    const status = await fetch('/mednav-voice/status');
-    if (!status.ok) throw new Error('Local Faster-Whisper service unavailable. Run python frontend/voice_server.py.');
-    const info = await status.json() as { model?: string };
-    if (info.model !== 'Systran/faster-whisper-tiny.en') {
-      throw new Error(`Voice server is using ${info.model ?? 'an unknown model'}. Restart it with Systran/faster-whisper-tiny.en.`);
+    let status = await fetch('/api/v1/voice/whisper-status');
+    if (status.status === 404) {
+      status = await fetch('/api/v1/voice/status');
+    }
+    if (!status.ok) throw new Error('Local Faster-Whisper service unavailable. Run the MEDNAV backend with Faster-Whisper installed.');
+    const info = await status.json() as { model?: string; available?: boolean };
+    if (info.available === false || info.model !== 'Systran/faster-whisper-tiny.en') {
+      throw new Error(`Voice server is using ${info.model ?? 'an unavailable model'}. Restart it with Systran/faster-whisper-tiny.en.`);
     }
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }, video: false });
@@ -75,23 +66,8 @@ export class OfflineRecognizer {
       this.sink.connect(this.context.destination);
       this.active = true;
       this.paused = false;
-      this.schedule();
+      this.interval = window.setInterval(() => { void this.transcribeChunk(); }, 2400);
     } catch (error) { await this.stop(); throw error; }
-  }
-
-  private schedule() {
-    if (this.interval !== null) window.clearInterval(this.interval);
-    this.interval = window.setInterval(() => { void this.transcribeChunk(); }, this.interruptMode ? 800 : 2400);
-  }
-
-  /** Keep the microphone active while speech is playing so the user can interrupt. */
-  setInterruptMode(enabled: boolean) {
-    if (this.interruptMode === enabled) return;
-    this.interruptMode = enabled;
-    this.generation++;
-    this.controller?.abort();
-    this.chunks = []; this.tail = new Float32Array(0);
-    if (this.active) this.schedule();
   }
 
   private async transcribeChunk() {
@@ -110,14 +86,13 @@ export class OfflineRecognizer {
     this.controller = controller;
     this.busy = true;
     try {
-      const result = await fetch('/mednav-voice/transcribe?segment_mode=true', {
+      const result = await fetch('/api/v1/voice/transcribe?segment_mode=true', {
         method: 'POST', headers: { 'Content-Type': 'audio/wav' },
         body: wav(samples, this.context?.sampleRate ?? 16000), signal: controller.signal,
       });
       if (!result.ok) throw new Error(`Voice transcription failed (${result.status})`);
       const data = await result.json() as { text?: string };
-      const text = data.text?.trim() ?? '';
-      if (this.active && !this.paused && generation === this.generation && plausibleTranscript(text, samples.length / (this.context?.sampleRate ?? 16000))) this.onText(text);
+      if (this.active && !this.paused && generation === this.generation && data.text?.trim()) this.onText(data.text.trim());
     } catch (error) {
       if (this.active && !controller.signal.aborted) this.onError(`Voice service error: ${error instanceof Error ? error.message : 'unavailable'}`);
     } finally { this.busy = false; if (this.controller === controller) this.controller = null; }
@@ -125,7 +100,6 @@ export class OfflineRecognizer {
 
   async stop() {
     this.active = false; this.paused = true; this.generation++;
-    this.interruptMode = false;
     if (this.interval !== null) window.clearInterval(this.interval);
     this.interval = null;
     this.controller?.abort(); this.controller = null;

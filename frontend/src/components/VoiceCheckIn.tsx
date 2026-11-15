@@ -18,54 +18,21 @@ type Props = {
 };
 
 
-const WORD_ONES: Record<string, number> = {
-  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
-  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
-  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
-};
-
-const WORD_TENS: Record<string, number> = {
-  twenty: 20, thirty: 30, forty: 40, fifty: 50,
-  sixty: 60, seventy: 70, eighty: 80, ninety: 90,
-};
-
-function normalizeSpokenNumbers(raw: string): string {
-  let s = raw
-    .toLowerCase()
-    .replace(/\bheart-rate\b/g, 'heart rate')
-    .replace(/\bb\.p\.\b/g, 'bp')
-    .replace(/\band a half\b/g, '.5')
-    .replace(/\bslash\b/g, '/');
-
-  // "one hundred twenty", "one twenty", "eighty-eight", "eighty eight"
-  s = s.replace(
-    /\b(?:(one)\s+(?:hundred\s+(?:and\s+)?)?)?(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[-\s]+(one|two|three|four|five|six|seven|eight|nine))?\b/g,
-    (_, hundred, tens, ones) => {
-      const val =
-        (hundred ? 100 : 0) +
-        WORD_TENS[tens] +
-        (ones ? WORD_ONES[ones] : 0);
-      return String(val);
-    }
-  );
-
-  s = s.replace(
-    /\b(one)\s+hundred\s+(?:and\s+)?(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/g,
-    (_, _h, unit) => String(100 + WORD_ONES[unit])
-  );
-
-  s = s.replace(
-    /\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/g,
-    (w) => String(WORD_ONES[w])
-  );
-
-  s = s.replace(/\b(\d+)\s+point\s+(\d+)\b/g, '$1.$2');
-  return s;
-}
-
 export function parseTranscriptToCheckIn(text: string): ParsedVoiceCheckIn {
-  const lower = normalizeSpokenNumbers(text);
+  const numbers:Record<string,number>={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
+  const words=Object.keys(numbers).concat('hundred','point').join('|');
+  const prepared=text.toLowerCase().replace(/\bheart-rate\b/g,'heart rate').replace(/\bb\.p\.\b/g,'bp').replace(/\band a half\b/g,'.5').replace(/\bslash\b/g,'/');
+  const lower=prepared.replace(new RegExp(`\\b(?:${words})(?:[ -]+(?:and[ -]+)?(?:${words}))*\\b`,'g'),phrase=>{
+    const [whole,decimal,...extra]=phrase.replace(/ and /g,' ').split(' point ');
+    const tokens=whole.split(/[ -]+/);
+    const small=(parts:string[])=>parts.length===0?0:parts.length===1?numbers[parts[0]]:parts.length===2&&numbers[parts[0]]>=20&&numbers[parts[0]]%10===0&&numbers[parts[1]]>0&&numbers[parts[1]]<10?numbers[parts[0]]+numbers[parts[1]]:undefined;
+    const rest=tokens[1]==='hundred'?small(tokens.slice(2)):small(tokens);
+    if(rest===undefined||extra.length||(tokens[1]==='hundred'&&!(numbers[tokens[0]]>=1&&numbers[tokens[0]]<=9)))return phrase;
+    const digits=decimal?.split(/[ -]+/);
+    if(digits?.some(w=>numbers[w]===undefined||numbers[w]>9))return phrase;
+    const n=rest+(tokens[1]==='hundred'?numbers[tokens[0]]*100:0);
+    return String(n)+(digits?'.'+digits.map(w=>numbers[w]).join(''):'');
+  }).replace(/\b(?:minus|negative)\s+(?=\d)/g,'-');
   const result: ParsedVoiceCheckIn = {};
 
   if (/\b(no symptoms|none reported|feeling fine|no symptom)\b/.test(lower)) {
