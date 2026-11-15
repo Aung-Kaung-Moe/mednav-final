@@ -1,0 +1,171 @@
+{
+  "schema_version": "1.0",
+  "offline_ready": true,
+  "medications": {
+    "acetaminophen_500mg": {
+      "name": "Acetaminophen 500 mg",
+      "indications": "Mild-to-moderate pain (headache, muscle ache) and fever reduction.",
+      "adult_dosage": "500 mg orally (up to 3,000 mg max per 24 hours per ISS cap; MedlinePlus adult OTC limit <= 4,000 mg/24h).",
+      "warnings": "Avoid exceeding daily hepatic limit or stacking with other acetaminophen products; preferred over NSAIDs when dehydrated or nauseated.",
+      "source_citation": "MedlinePlus / NIH — Acetaminophen Drug Information",
+      "source_url": "https://medlineplus.gov/druginfo/meds/a681004.html",
+      "resources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus / NIH — Acetaminophen Drug Information",
+          "url": "https://medlineplus.gov/druginfo/meds/a681004.html"
+        },
+        {
+          "org": "NCBI Bookshelf / StatPearls",
+          "citation": "StatPearls (NCBI) — Acetaminophen Clinical Monograph",
+          "url": "https://www.ncbi.nlm.nih.gov/books/NBK482325/"
+        },
+        {
+          "org": "U.S. FDA",
+          "citation": "U.S. FDA — Acetaminophen Hepatic & Safe Dosing Guidance",
+          "url": "https://www.fda.gov/drugs/information-drug-class/acetaminophen"
+        },
+        {
+          "org": "NIH DailyMed",
+          "citation": "NIH DailyMed — Acetaminophen 500 mg Official Drug Label",
+          "url": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=a8bb4f45-7a1a-4bf7-92ca-3afd508032f3"
+        }
+      ]
+    },
+    "ibuprofen_400mg": {
+      "name": "Ibuprofen 400 mg",
+      "indications": "Mild-to-moderate inflammatory pain, musculoskeletal / ARED soreness, headache, and fever.",
+      "adult_dosage": "400 mg every 4 to 6 hours with food (OTC self-care cap <= 1,200 mg/day).",
+      "warnings": "Do NOT take if dehydrated, dizzy/orthostatic, nauseated, or having kidney/GI ulcer risks; NSAIDs carry GI bleeding and renal/CV precautions.",
+      "source_citation": "MedlinePlus / NIH & Eyal et al. (2019) Pharm Res — NSAID Contraindications",
+      "source_url": "https://medlineplus.gov/druginfo/meds/a682159.html",
+      "resources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus / NIH — Ibuprofen Drug Information",
+          "url": "https://medlineplus.gov/druginfo/meds/a682159.html"
+        },
+        {
+          "org": "Pharmaceutical Research",
+          "citation": "Eyal et al. (2019) · NSAID Contraindications in Dehydration",
+          "url": "https://doi.org/10.1007/s11095-019-2649-9"
+        },
+        {
+          "org": "NASA JSC / FASEB J",
+          "citation": "Wotring, V. E. (2015) · ISS Crew Analgesic Usage (PMC4621588)",
+          "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4621588/"
+        }
+      ]
+    },
+    "oral_rehydration_salts": {
+      "name": "Oral Rehydration Salts (ORS)",
+      "indications": "Mild-to-moderate dehydration, orthostatic dizziness, post-EVA fluid deficit, and elevated resting heart rate from low blood volume.",
+      "adult_dosage": "Dissolve 1 packet completely in 500 mL potable water; sip gradually.",
+      "warnings": "Do not mix in boiling water or add extra sugar/salt; seek urgent medical review if persistent vomiting or inability to keep fluids down occurs.",
+      "source_citation": "MedlinePlus / WHO ORS Formulation & Mayo Clinic Dehydration Care",
+      "source_url": "https://medlineplus.gov/dehydration.html",
+      "resources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus / NIH — Dehydration & Electrolyte Replacement",
+          "url": "https://medlineplus.gov/dehydration.html"
+        },
+        {
+          "org": "Mayo Clinic",
+          "citation": "Mayo Clinic — Dehydration Symptoms & Fluid Care",
+          "url": "https://www.mayoclinic.org/diseases-conditions/dehydration/symptoms-causes/syc-20354086"
+        },
+        {
+          "org": "Mayo Clinic",
+          "citation": "Mayo Clinic — Orthostatic Hypotension & Volume Recovery",
+          "url": "https://www.mayoclinic.org/diseases-conditions/orthostatic-hypotension/symptoms-causes/syc-20352548"
+        },
+        {
+          "org": "NASA Standards",
+          "citation": "NASA-STD-3001 · ISS Fluid Shift & Post-EVA Rehydration",
+          "url": "https://standards.nasa.gov"
+        }
+      ]
+    },
+    "meclizine_25mg": {
+      "name": "Meclizine 25 mg",
+      "indications": "Space motion sickness, movement-triggered dizziness/vertigo, and nausea.",
+      "adult_dosage": "25 mg orally (standard range 25 to 50 mg); max 2 tablets/day under ISS operational rationing.",
+      "warnings": "Causes drowsiness and anticholinergic dry mouth/blurred vision; avoid before safety-critical EVA, robotics, or docking duties.",
+      "source_citation": "MedlinePlus / NIH — Meclizine Drug Information",
+      "source_url": "https://medlineplus.gov/druginfo/meds/a682548.html",
+      "resources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus / NIH — Meclizine Drug Information",
+          "url": "https://medlineplus.gov/druginfo/meds/a682548.html"
+        },
+        {
+          "org": "NASA JSC / FASEB J",
+          "citation": "Wotring, V. E. (2015) · ISS Motion Sickness Medication Data",
+          "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4621588/"
+        },
+        {
+          "org": "Br J Clin Pharmacol",
+          "citation": "Daniels & Williams · Spaceflight Antiemetic Formulations",
+          "url": "https://doi.org/10.1111/bcp.15957"
+        }
+      ]
+    },
+    "ondansetron_8mg": {
+      "name": "Ondansetron 8 mg ODT",
+      "indications": "Non-sedating prevention/relief of acute nausea, vomiting, and space motion sickness.",
+      "adult_dosage": "Dissolve one 8 mg ODT tablet on tongue without water; max 2 doses/day.",
+      "warnings": "Use caution with QT-prolonging risks, electrolyte imbalance, or serotonergic drugs.",
+      "source_citation": "MedlinePlus / NIH — Ondansetron Oral Disintegrating Tablet Reference",
+      "source_url": "https://medlineplus.gov/druginfo/meds/a601209.html",
+      "resources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus / NIH — Ondansetron ODT Drug Information",
+          "url": "https://medlineplus.gov/druginfo/meds/a601209.html"
+        },
+        {
+          "org": "NASA JSC / FASEB J",
+          "citation": "Wotring, V. E. (2015) · ISS Crew Medication Analysis",
+          "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4621588/"
+        },
+        {
+          "org": "Br J Clin Pharmacol",
+          "citation": "Daniels & Williams · Oral Disintegrating Spaceflight Meds",
+          "url": "https://doi.org/10.1111/bcp.15957"
+        }
+      ]
+    },
+    "melatonin_3mg": {
+      "name": "Melatonin 3 mg",
+      "indications": "Short-term circadian entrainment and sleep-onset support during orbital light/dark shifts.",
+      "adult_dosage": "3 mg orally 30 to 60 minutes before scheduled sleep period (typical adult range 0.5 to 5 mg).",
+      "warnings": "Avoid before alertness-critical tasks; monitor if heart rate or blood pressure symptoms coexist and pause if daytime dizziness worsens.",
+      "source_citation": "MedlinePlus / NIH — Melatonin Dietary Supplement Reference",
+      "source_url": "https://medlineplus.gov/druginfo/natural/940.html",
+      "resources": [
+        {
+          "org": "MedlinePlus / NIH",
+          "citation": "MedlinePlus / NIH — Melatonin Dosing & Safety Reference",
+          "url": "https://medlineplus.gov/druginfo/natural/940.html"
+        },
+        {
+          "org": "NCCIH / NIH",
+          "citation": "NCCIH / NIH — Melatonin Circadian Rhythm Overview",
+          "url": "https://www.nccih.nih.gov/health/melatonin-what-you-need-to-know"
+        },
+        {
+          "org": "NASA JSC / FASEB J",
+          "citation": "Wotring, V. E. (2015) · ISS Crew Sleep Aid Analysis",
+          "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4621588/"
+        },
+        {
+          "org": "npj Microgravity",
+          "citation": "Buckland et al. (2024) · Exploration Formulary Reserve",
+          "url": "https://doi.org/10.1038/s41526-024-00414-3"
+        }
+      ]
+    }
+  }
+}

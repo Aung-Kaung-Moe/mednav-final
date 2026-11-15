@@ -38,6 +38,19 @@ class InventoryRow(Base):
     available: Mapped[bool] = mapped_column(Boolean)
 
 
+class FollowUpRow(Base):
+    """User-recorded workflow documentation, never a treatment/outcome record."""
+    __tablename__ = "follow_up_events"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    astronaut_id: Mapped[str] = mapped_column(ForeignKey("astronauts.id"), index=True)
+    check_in_id: Mapped[str] = mapped_column(ForeignKey("check_ins.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String)
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    provenance: Mapped[str]
+    synthetic: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class SeedVersion(Base):
     __tablename__ = "seed_versions"
     id: Mapped[str] = mapped_column(String, primary_key=True)

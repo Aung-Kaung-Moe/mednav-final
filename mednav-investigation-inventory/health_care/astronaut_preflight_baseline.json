@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "offline_ready": true,
+  "description": "Pre-flight astronaut resting vital sign reference ranges used as normal baseline before spaceflight mission departure.",
+  "preflight_normal_baselines": {
+    "resting_heart_rate_bpm": {
+      "normal_range": "60 to 100 bpm",
+      "typical_preflight_baseline_bpm": 70,
+      "mild_deviation_delta_bpm": 12,
+      "critical_resting_bpm": 120,
+      "nasa_selection_disqualifying_sinus_tachycardia_bpm": 130,
+      "notes": "Compare each astronaut's in-flight heart rate against their personal pre-flight resting baseline."
+    },
+    "respiratory_rate_breaths_per_min": {
+      "normal_range": "12 to 18 breaths/min (broad clinical reference up to 20 breaths/min)",
+      "typical_preflight_baseline": 15,
+      "notes": "Measured at rest alongside core temperature during pre-flight clinical evaluation."
+    },
+    "blood_pressure_mmhg": {
+      "normal_sitting_range": "90/60 to 120/80 mmHg",
+      "nasa_retention_ceiling_mmhg": "140/90 mmHg",
+      "notes": "Documented across recumbent, sitting, and standing postures pre-flight for orthostatic comparison."
+    },
+    "body_temperature_celsius": {
+      "normal_range": "36.5 to 37.3 C (97.7 to 99.1 F)",
+      "average_celsius": 37.0,
+      "febrile_threshold_celsius": 38.0
+    },
+    "sleep_hours_per_night": {
+      "normal_range": "7.0 to 8.0 hours",
+      "typical_preflight_baseline_hours": 7.3,
+      "low_sleep_delta_hours": 1.0
+    }
+  },
+  "sources": [
+    {
+      "org": "NASA Standards (NASA-STD-3001 Vol. 1 & OCHMO-STD-100.1A)",
+      "citation": "NASA Space Flight Human-System Standard & Astronaut Medical Standards Selection / Annual Recertification",
+      "url": "https://standards.nasa.gov"
+    },
+    {
+      "org": "MedlinePlus / NIH",
+      "citation": "MedlinePlus Medical Encyclopedia — Vital Signs (Normal Adult Heart Rate, Respiratory Rate, Blood Pressure & Temperature)",
+      "url": "https://medlineplus.gov/ency/article/002341.htm"
+    }
+  ]
+}
