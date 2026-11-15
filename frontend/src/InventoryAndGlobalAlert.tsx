@@ -160,7 +160,7 @@ export function useGlobalCrewAlertScanner(live: boolean) {
           // Non-fatal if background crew alert scan fails
         }
       })();
-    }, 15_000);
+    }, 2_000);
   };
 
   return { globalCrewAlerts, scheduleCheckInAlertScan };
