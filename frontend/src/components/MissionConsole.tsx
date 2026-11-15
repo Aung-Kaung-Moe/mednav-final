@@ -7,9 +7,7 @@ import {
   Stethoscope,
   Moon,
   Activity,
-  ShieldAlert,
   ShieldCheck,
-  Package,
   Radiation,
   Dumbbell,
   Eye,
@@ -44,7 +42,7 @@ import { asVoiceResponse } from '../voice/currentDemo';
 import { BodySystemMonitoring } from './BodySystemMonitoring';
 import { MissionHealthTimeline } from './MissionHealthTimeline';
 import { bodyRegion } from '../data/bodyMonitoring';
-import { BODY_SYSTEMS, replayWindow, systemEvidence, type BodySystem, type EvidenceState } from '../data/bodyGraph';
+import { BODY_SYSTEMS, replayWindow } from '../data/bodyGraph';
 import { BodyGraphNavigator } from './BodyGraphNavigator';
 import type { SavedCheckIn } from '../types/api';
 import '../console.css';
@@ -233,22 +231,19 @@ export function MissionConsole({
     const selectedIndex = liveRecord ? liveRecords.findIndex(r=>r.id===liveRecord.id) : -1;
     return selectedIndex>=0?selectedIndex:Math.max(0,history.length-1);
   });
-  const [trendMode, setTrendMode] = useState<'hr' | 'rad' | 'ug'>('hr');
   const [selectedPart, setSelectedPart] = useState('brain');
   const [replaySelection,setReplaySelection]=useState<{crewId:string;id:string}|null>(null);
   useEffect(()=>setReplaySelection(null),[crew.id]);
   const replayId=replaySelection?.crewId===crew.id?replaySelection.id:null;
   let bodyHistory:SavedCheckIn[]=[],bodyRecord:SavedCheckIn|undefined,replayError=historyError;
   if(live&&!historyLoading&&!historyError){try{const window=replayWindow(liveRecords,crew.id,replayId);bodyHistory=window.history;bodyRecord=window.record;}catch(e){replayError=(e as Error).message;}}
-  const evidenceMap:Partial<Record<BodySystem,EvidenceState>>={};
-  if(live&&!historyLoading&&!replayError)for(const system of BODY_SYSTEMS)evidenceMap[system.id]=systemEvidence(system.id,bodyRecord,crew).state;
   const selectReplay=(id:string|null)=>setReplaySelection(id?{crewId:crew.id,id}:null);
   const [layerMode, setLayerMode] = useState<AnatomyLayerMode>('xray');
   const [autoRotate, setAutoRotate] = useState(false);
   const [sex, setSex] = useState<AnatomySex>('male');
   const [modelStatus, setModelStatus] = useState<AnatomyModelStatus>('loading');
 
-  // Purely render the engine/fixture response â€” no separate medical decision logic in the frontend.
+  // Purely render the engine/fixture response — no separate medical decision logic in the frontend.
   const response = live
     ? liveResponse
     : voiceResponse && [2, 5].includes(page)
@@ -298,10 +293,6 @@ export function MissionConsole({
     (crew.sleep !== null ? 1 : 0) +
     (bp !== null ? 1 : 0);
 
-  const usableEquipCount = inventory.filter((e) =>
-    e.name === 'Blood-pressure monitor' ? monitor : e.available
-  ).length;
-
   const crewKey = crew.id.slice(-1).toLowerCase() as 'a' | 'b' | 'c';
   const activeHistoryDay = history[dayIndex] ?? history[history.length - 1] ?? {} as typeof fixtureHistory[number];
   const dayHr = activeHistoryDay[crewKey];
@@ -313,18 +304,8 @@ export function MissionConsole({
   // VIEW 0: ASTRONAUT HEALTH OVERVIEW (WITH SPACE RADIATION & MICROGRAVITY)
   // ---------------------------------------------------------------------------
   if (page === 0) {
-    const trendDataKey =
-      trendMode === 'hr'
-        ? crewKey
-        : trendMode === 'rad'
-        ? (`r${crewKey}` as const)
-        : (`c${crewKey}` as const);
-    const trendColor =
-      trendMode === 'hr'
-        ? '#5B9BD5'
-        : trendMode === 'rad'
-        ? '#F5A623'
-        : '#9D7BFF';
+    const trendDataKey = crewKey;
+    const trendColor = '#5B9BD5';
 
     const coverageTotal=live?3:8;
     const recordedCount = live?knownVitalsCount:[
@@ -358,10 +339,10 @@ export function MissionConsole({
           <div className="dashboard-header-bar">
             <div className="dash-title-group">
               <div className="wide-planetary-label left-aligned">
-                C R E W &nbsp; H E A L T H &nbsp; Â· &nbsp; D A Y &nbsp; 1 8 0
+                C R E W &nbsp; H E A L T H &nbsp; · &nbsp; D A Y &nbsp; 1 8 0
               </div>
               <h1 className="section-sans-headline">
-                {crew.id} Â· {crew.role}
+                {crew.id} · {crew.role}
               </h1>
             </div>
 
@@ -561,7 +542,6 @@ export function MissionConsole({
 
             {/* CENTER STAGE: INTERACTIVE 3D HUMAN ANATOMY */}
             <BodyViewer
-              evidence={live?evidenceMap:undefined}
               selectedPart={selectedPart}
               setSelectedPart={setSelectedPart}
               layerMode={layerMode}
@@ -587,25 +567,6 @@ export function MissionConsole({
                 </div>
 
                 <h3>{view.nextCheckTitle}</h3>
-                <p title={view.selectedExplanation}>{view.selectedExplanation}</p>
-
-                <div className="nc-status-chips">
-                  <div className="nc-chip">
-                    <Package size={14} />
-                    <span>
-                      Usable: <b>{usableEquipCount}/{inventory.length}</b>
-                    </span>
-                  </div>
-                  <div className="nc-chip">
-                    <ShieldAlert size={14} />
-                    <span>
-                      BP Mon:{' '}
-                      <b className={!monitor ? 'unknown-val' : ''}>
-                        {monitor ? 'Ready' : 'Blocked'}
-                      </b>
-                    </span>
-                  </div>
-                </div>
 
                 <div className="slide-action-pill-track">
                   <button
@@ -698,45 +659,18 @@ export function MissionConsole({
               <div className="trend-card-head">
                 <div>
                   <span className="wide-planetary-label left-aligned">
-                    {live && trendMode === 'hr' ? 'S A V E D  H E A L T H  H I S T O R Y' : <>7 - D A Y &nbsp; T R E N D</>}
-                  </span>
-                  <span className="trend-sub-val">
-                    {crew.id} Â· {live ? (trendMode === 'hr' ? 'Timestamped SQLite records (synthetic)' : 'D174â€“D180 (illustrative)') : 'D174â€“D180'}
+                    {live ? 'S A V E D  H E A L T H  H I S T O R Y' : <>7 - D A Y &nbsp; T R E N D</>}
                   </span>
                 </div>
 
                 <div className="trend-mode-pills">
-                  <button
-                    type="button"
-                    className={`hairline-pill-btn ${
-                      trendMode === 'hr' ? 'active' : ''
-                    }`}
-                    onClick={() => setTrendMode('hr')}
-                  >
+                  <span className="hairline-pill-btn active">
                     Heart Rate
-                  </button>
-                  <button
-                    type="button"
-                    className={`hairline-pill-btn ${
-                      trendMode === 'rad' ? 'active' : ''
-                    }`}
-                    onClick={() => setTrendMode('rad')}
-                  >
-                    Radiation
-                  </button>
-                  <button
-                    type="button"
-                    className={`hairline-pill-btn ${
-                      trendMode === 'ug' ? 'active' : ''
-                    }`}
-                    onClick={() => setTrendMode('ug')}
-                  >
-                    Î¼G Exercise
-                  </button>
+                  </span>
                 </div>
               </div>
 
-              {live && trendMode === 'hr' ? (
+              {live ? (
                 <MissionHealthTimeline
                   key={crew.id}
                   crew={crew}
@@ -747,20 +681,11 @@ export function MissionConsole({
                     selectReplay(id);
                     document.querySelector('.selected-card')?.scrollIntoView({ block: 'center', behavior: 'instant' });
                   }}
-                  onRegion={(region, id) => {
-                    if (id) selectReplay(id);
-                    focusPart(region, 'organs');
-                    document.querySelector('.selected-card')?.scrollIntoView({
-                      block: 'center',
-                      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-                    });
-                  }}
-                  onInvestigate={(id) => onInvestigate?.(id)}
                 />
               ) : (
                 <div className="trend-chart-wrap" onClick={() => go(2)}>
                   <ResponsiveContainer width="100%" height={180}>
-                    <AreaChart data={live && trendMode !== 'hr' ? fixtureHistory : history}>
+                    <AreaChart data={history}>
                     <defs>
                       <linearGradient id="cobaltGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop
@@ -805,8 +730,52 @@ export function MissionConsole({
   // VIEW 5: INCIDENT REPORT
   // ---------------------------------------------------------------------------
   if (page === 5) {
+    const vitalsRows = [
+      ['Heart Rate', crew.hr === null ? 'Unknown' : `${crew.hr} bpm`],
+      ['Sleep', crew.sleep === null ? 'Unknown' : `${crew.sleep} h`],
+      ['Blood Pressure', bp ?? 'Unknown'],
+      ['Symptoms', crew.symptoms.join(', ') || 'None reported'],
+      ['Missing Data', missing.join(', ') || 'None'],
+    ];
+    const envRows = [
+      [
+        'Daily Radiation',
+        crew.radiationDailyMsv === null
+          ? 'Unknown'
+          : `${crew.radiationDailyMsv} mSv/d`,
+      ],
+      [
+        '180d Radiation',
+        crew.radiationCumulativeMsv === null
+          ? 'Unknown'
+          : `${crew.radiationCumulativeMsv} mSv`,
+      ],
+      [
+        'ARED Exercise',
+        crew.countermeasureMin === null
+          ? 'Unknown'
+          : `${crew.countermeasureMin}/${crew.countermeasureTargetMin} min`,
+      ],
+      [
+        'Body Mass',
+        crew.bodyMassKg === null ? 'Unknown' : `${crew.bodyMassKg} kg`,
+      ],
+      [
+        'Ocular (SANS)',
+        live ? 'Not recorded' : crew.ocularCheck ?? 'Unknown',
+      ],
+      ['BP Monitor', monitor ? 'Available' : 'Unavailable'],
+      ['Ultrasound', ultrasoundAvailable ? 'Available' : 'Unavailable'],
+      ['Earth Link', flags[2] ? 'Online (sim)' : 'Offline'],
+    ];
+
     return (
-      <div className="mission-console space-subpage incident-report" data-testid={live?'engine-status':undefined} data-status={view.status} aria-label={live?'Live investigation result':undefined}>
+      <div
+        className="mission-console space-subpage incident-report"
+        data-testid={live ? 'engine-status' : undefined}
+        data-status={view.status}
+        aria-label={live ? 'Live investigation result' : undefined}
+      >
         <div className="subpage-top-bar">
           <button
             type="button"
@@ -819,91 +788,129 @@ export function MissionConsole({
             I N C I D E N T &nbsp; R E P O R T
           </div>
           <span className="hairline-status-tag">
-            {live?'LOCAL PREVIEW Â· NOT TRANSMITTED':'PENDING GROUND REVIEW Â· OFFLINE'}
+            {live
+              ? 'LOCAL PREVIEW · NOT TRANSMITTED'
+              : 'PENDING GROUND REVIEW · OFFLINE'}
           </span>
         </div>
 
-        <div className="asymmetric-workspace-grid">
-          <section className="left-telemetry-column">
-            <h1 className="section-sans-headline">
-              {view.id} / {crew.id}
-            </h1>
-            <p className="telemetry-summary-copy">
-              {view.selectedExplanation}
-            </p>
+        <div className="subpage-intro">
+          <span className="subpage-eyebrow">{crew.id.toUpperCase()} · LOCAL RECORD</span>
+          <h1>Incident report</h1>
+          <p>A concise record of observations, context, and the investigation decision.</p>
+        </div>
 
-            <dl className="hairline-telemetry-list">
-              {[
-                ['Heart rate:', crew.hr === null ? 'Unknown' : `${crew.hr} bpm`],
-                ['Sleep:', crew.sleep === null ? 'Unknown' : `${crew.sleep} hours`],
-                ['Blood pressure:', bp ?? 'Unknown'],
-                [
-                  'Space radiation (daily):',
-                  crew.radiationDailyMsv === null
-                    ? 'Unknown'
-                    : `${crew.radiationDailyMsv} mSv/day (Baseline ${crew.radiationBaselineMsv} mSv/day)`,
-                ],
-                [
-                  'Space radiation (180d cumulative):',
-                  crew.radiationCumulativeMsv === null
-                    ? 'Unknown'
-                    : `${crew.radiationCumulativeMsv} mSv`,
-                ],
-                [
-                  'Microgravity exercise (ARED):',
-                  crew.countermeasureMin === null
-                    ? 'Unknown'
-                    : `${crew.countermeasureMin} / ${crew.countermeasureTargetMin} min`,
-                ],
-                [
-                  'Microgravity body mass (SLAMMD):',
-                  crew.bodyMassKg === null
-                    ? 'Unknown'
-                    : `${crew.bodyMassKg} kg (Baseline ${crew.baselineMassKg} kg)`,
-                ],
-                [
-                  'Microgravity ocular check (SANS):',
-                  live?'Ocular assessment not recorded':crew.ocularCheck??'Unknown (illustrative fixture)',
-                ],
-                ['Symptoms:', crew.symptoms.join(', ') || 'None reported'],
-                [
-                  'Missing information:',
-                  missing.join(', ') || 'No missing form readings',
-                ],
-                ['BP monitor:', monitor ? 'Available' : 'Unavailable'],
-                [
-                  'Ultrasound unit:',
-                  ultrasoundAvailable ? 'Available' : 'Unavailable',
-                ],
-                ['Earth link:', flags[2] ? 'Online (simulated)' : 'Offline'],
-                ['Status:', view.status],
-                [
-                  'Next check:',
-                  view.hasNextCheck ? view.nextCheckTitle : 'None',
-                ],
-              ].map(([k, v]) => (
-                <div className="telemetry-kv-row" key={k}>
-                  <dt>{k}</dt>
-                  <dd className={v === 'Unknown' ? 'unknown-val' : ''}>{v}</dd>
-                </div>
-              ))}
-            </dl>
+        {/* Summary KPI Strip */}
+        <section className="ir-summary-grid" aria-label="Incident summary">
+          <div className="inv-stat-card">
+            <span className="inv-stat-label">CREW / SCENARIO</span>
+            <strong>
+              {crew.id} · {view.id}
+            </strong>
+            <small>{crew.role}</small>
+          </div>
+          <div className="inv-stat-card">
+            <span className="inv-stat-label">STATUS</span>
+            <strong
+              className={
+                view.status === 'escalate' ? 'unknown-val' : 'ok-txt'
+              }
+            >
+              {view.statusBadge}
+            </strong>
+            <small>{view.status}</small>
+          </div>
+          <div className="inv-stat-card">
+            <span className="inv-stat-label">NEXT CHECK</span>
+            <strong>{view.hasNextCheck ? view.nextCheckTitle : 'None'}</strong>
+            <small>
+              {view.hasNextCheck ? 'Approved protocol' : 'No check selected'}
+            </small>
+          </div>
+          <div className="inv-stat-card">
+            <span className="inv-stat-label">CLINICAL SCOPE</span>
+            <strong>Non-Diagnostic</strong>
+            <small>Navigation &amp; handoff record</small>
+          </div>
+        </section>
+
+        <div className="asymmetric-workspace-grid">
+          <section className="left-telemetry-column ir-cards-col">
+            <div className="ir-section-card">
+              <div className="ir-card-head">
+                <HeartPulse size={16} className="inv-accent-icon" />
+                <h2>Vitals &amp; Symptoms</h2>
+              </div>
+              <dl className="ir-kv-grid">
+                {vitalsRows.map(([k, v]) => (
+                  <div className="ir-kv-tile" key={k}>
+                    <dt>{k}</dt>
+                    <dd className={v === 'Unknown' ? 'unknown-val' : ''}>
+                      {v}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            <div className="ir-section-card">
+              <div className="ir-card-head">
+                <Activity size={16} className="inv-accent-icon" />
+                <h2>Environment &amp; Equipment</h2>
+              </div>
+              <dl className="ir-kv-grid">
+                {envRows.map(([k, v]) => (
+                  <div className="ir-kv-tile" key={k}>
+                    <dt>{k}</dt>
+                    <dd
+                      className={
+                        v === 'Unknown' || v === 'Unavailable'
+                          ? 'unknown-val'
+                          : ''
+                      }
+                    >
+                      {v}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
           </section>
 
-          <aside className="right-frosted-sheet">
+          <aside className="right-frosted-sheet ir-rationale-panel">
             <div className="wide-planetary-label left-aligned">
               C H E C K L I S T &nbsp; R A T I O N A L E
             </div>
-            <h3>Selection Rationale</h3>
-            <p>{view.selectedExplanation}</p>
-            <p>{view.excludedExplanation}</p>
+            <h3>Decision Summary</h3>
+
+            <div className="ir-rationale-block">
+              <span className="ir-block-label">
+                <ShieldCheck size={14} className="ok-txt" /> WHY SELECTED
+              </span>
+              <p>{view.selectedExplanation}</p>
+            </div>
+
+            <div className="ir-rationale-block">
+              <span className="ir-block-label">
+                <Info size={14} className="inv-accent-icon" /> WHY EXCLUDED
+              </span>
+              <p>{view.excludedExplanation}</p>
+            </div>
 
             <div className="sheet-divider" />
 
             <div className="telemetry-kv-row compact">
               <dt>Data Source:</dt>
-              <dd title={liveRecord ? `${liveRecord.id} / ${liveRecord.recorded_at} / ${liveRecord.provenance}` : undefined}>
-                {live ? 'Saved health record / Stable engine; other telemetry illustrative' : 'Synthetic Demo Record / Illustrative fixtures'}
+              <dd
+                title={
+                  liveRecord
+                    ? `${liveRecord.id} / ${liveRecord.recorded_at} / ${liveRecord.provenance}`
+                    : undefined
+                }
+              >
+                {live
+                  ? 'Saved health record (synthetic)'
+                  : 'Synthetic Demo Record'}
               </dd>
             </div>
             <div className="telemetry-kv-row compact">
@@ -914,7 +921,7 @@ export function MissionConsole({
             <button
               type="button"
               className="ghost-rect-cta full-width export-json-btn"
-              onClick={() => downloadJSON(crew, inventory, response,liveRecord)}
+              onClick={() => downloadJSON(crew, inventory, response, liveRecord)}
             >
               <Download size={16} />
               <span>Export JSON</span>

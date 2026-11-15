@@ -22,10 +22,14 @@ const cases=[
  ['how many hours did i sleep','sleep'],['show my health history','history'],
  ['what measurements are missing','missing'],['what equipment is available','inventory'],
  ['read my recommendation','recommendation'],['start pulse timer','pulse_timer'],
- ['health check','start_check'],['start health check','start_check'],['stop listening','control'],
+ ['health check','start_check'],['here check','start_check'],['hear check','start_check'],['start health check','start_check'],['stop listening','control'],
 ]
 for(const [text,expect] of cases){const output=commands.matchCommand(text);assert.equal(output,expect,`Command: ${text}`)}
 assert.deepEqual(commands.parseWake('Hey MEDNAV what is my pulse?'),{woke:true,remainder:'what is my pulse?'})
+assert.deepEqual(commands.parseWake('Hello, MEDNAV, can you help?'),{woke:true,remainder:'can you help?'})
+assert.deepEqual(commands.parseWake('Hey there MEDNAV, start health check'),{woke:true,remainder:'start health check'})
+assert.deepEqual(commands.parseWake('Hi Met Nav!'),{woke:true,remainder:''})
+assert.deepEqual(commands.parseWake('The medical navigator is ready'),{woke:false,remainder:''})
 assert.equal(commands.matchCommand('medicine dose for headache'),null)
 assert.equal(commands.matchCommand('tell me how to prescribe pills'),null)
 assert.deepEqual(questions.parseSymptoms('I have headache and feel tired'),['headache','fatigue'])

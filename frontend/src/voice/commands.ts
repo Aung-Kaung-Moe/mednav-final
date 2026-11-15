@@ -3,10 +3,12 @@ export type Intent =
   | 'wake' | 'start_check' | 'health_status' | 'heart_rate' | 'sleep'
   | 'blood_pressure' | 'history' | 'missing' | 'inventory'
   | 'investigate' | 'recommendation' | 'pulse_timer' | 'control'
+  | 'report_open' | 'report_weekly' | 'report_heart' | 'report_symptoms' | 'report_medications'
+  | 'report_generate' | 'report_status' | 'report_pending' | 'report_review'
 
 export const COMMANDS: ReadonlyArray<{ intent: Intent; phrases: readonly string[] }> = [
   { intent: 'wake', phrases: ['hey mednav', 'hey med nav', 'hello mednav', 'hello med nav', 'okay mednav'] },
-  { intent: 'start_check', phrases: ['health check', 'start health check', 'begin health check', 'check my health', 'start check in', 'new health check in'] },
+  { intent: 'start_check', phrases: ['health check', 'here check', 'hear check', 'start health check', 'start here check', 'begin health check', 'check my health', 'start check in', 'new health check in'] },
   { intent: 'health_status', phrases: ['show my health status', 'how is my health', 'give me my health summary', 'read my vitals'] },
   { intent: 'heart_rate', phrases: ['what is my heart rate', 'tell me my pulse', 'read my bpm', 'what is my pulse', 'heart rate reading'] },
   { intent: 'sleep', phrases: ['how many hours did i sleep', 'what is my sleep duration', 'read my sleep data', 'how much did i sleep'] },
@@ -17,6 +19,15 @@ export const COMMANDS: ReadonlyArray<{ intent: Intent; phrases: readonly string[
   { intent: 'investigate', phrases: ['investigate my health', 'run investigation', 'analyze my check in', 'start investigation'] },
   { intent: 'recommendation', phrases: ['read my recommendation', 'what is the next check', 'read the explanation', 'what should i check next', 'read investigation result'] },
   { intent: 'pulse_timer', phrases: ['start pulse timer', 'measure my heart rate', 'count my pulse', 'start heart rate timer'] },
+  { intent: 'report_open', phrases: ['open my incident report', 'read my latest incident report', 'open my pdf report', 'open earth communication status'] },
+  { intent: 'report_weekly', phrases: ['show my weekly health report', 'show weekly medical report'] },
+  { intent: 'report_heart', phrases: ['read my heart rate history', 'weekly heart rate history'] },
+  { intent: 'report_symptoms', phrases: ['what symptoms did i report this week', 'symptoms reported this week'] },
+  { intent: 'report_medications', phrases: ['what medications have i taken', 'show my medication history'] },
+  { intent: 'report_generate', phrases: ['generate my medical pdf report', 'generate my medical report'] },
+  { intent: 'report_status', phrases: ['is my report queued for earth', 'has earth received my medical report', 'is my medical report sent to earth'] },
+  { intent: 'report_pending', phrases: ['how many pdf reports are pending', 'how many reports are pending'] },
+  { intent: 'report_review', phrases: ['show my medical officer review', 'read my medical officer review'] },
   { intent: 'control', phrases: ['repeat', 'repeat that', 'stop listening', 'cancel', 'goodbye mednav', 'stop'] },
 ]
 
@@ -62,7 +73,8 @@ export function matchCommand(utterance:string): Intent | null {
 
 export function parseWake(text:string):{woke:boolean;remainder:string} {
   const t=text.trim()
-  const match=t.match(/(?:^|\b)(?:hey|hello|okay)\s+med\s*nav\b[,.!\s]*/i)
+  // Keep the call sign distinct, but allow natural greetings and short fillers.
+  const match=t.match(/(?:^|\b)(?:(?:hey|hello|hi|ok|okay|yo)(?:[\s,.!?]+(?:there|uh|um|please|my)){0,3}[\s,.!?]+)?(?:med|met|mad)[\s-]*nav\b[\s,.!?]*/i)
   if(!match) return {woke:false,remainder:''}
   return {woke:true,remainder:t.slice((match.index??0)+match[0].length).trim()}
 }

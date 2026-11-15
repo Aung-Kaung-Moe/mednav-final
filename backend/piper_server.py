@@ -3,6 +3,7 @@ import io
 import os
 import threading
 import wave
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -28,6 +29,14 @@ app.add_middleware(
 
 _lock = threading.Lock()
 _voice: PiperVoice | None = None
+COMMON_PROMPTS = (
+    "Hello, astronaut Crew A. I am MEDNAV. Would you like to start a health check?",
+    "Any symptoms? Say a symptom, or none.",
+    "When did the symptoms begin?",
+    "What was your measured heart rate?",
+    "How many hours did you sleep?",
+    "What was your measured blood pressure?",
+)
 
 
 class SynthesizeRequest(BaseModel):
@@ -44,6 +53,7 @@ def get_voice() -> PiperVoice:
         return _voice
 
 
+@lru_cache(maxsize=64)
 def synthesize_wav_bytes(text: str) -> bytes:
     cleaned = text.strip()
     if not cleaned:
@@ -54,6 +64,12 @@ def synthesize_wav_bytes(text: str) -> bytes:
         with wave.open(buffer, "wb") as wav_file:
             voice.synthesize_wav(cleaned, wav_file)
     return buffer.getvalue()
+
+
+@app.on_event("startup")
+def warm_common_prompts():
+    for prompt in COMMON_PROMPTS:
+        synthesize_wav_bytes(prompt)
 
 
 @app.get("/health")

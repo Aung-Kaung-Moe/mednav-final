@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+import asyncio
 from datetime import datetime, timezone
 import os
 import logging
+import tempfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -63,7 +65,7 @@ def profile(session, row):
     return Astronaut(id=row.id, role=row.role, baseline=row.baseline, sleepBaseline=row.sleepBaseline, provenance=latest.provenance if latest else "Synthetic profile v1", **readings)
 
 
-def create_app(database_url: str | None = None, *, adapter: InvestigationAdapter | None = None, seed_demo: bool = True, investigation_mode: str | None = None):
+def create_app(database_url: str | None = None, *, adapter: InvestigationAdapter | None = None, seed_demo: bool = True, investigation_mode: str | None = None, report_dir: str | Path | None = None):
     mode = investigation_mode if investigation_mode is not None else os.getenv("MEDNAV_INVESTIGATION_MODE", "fixture")
     if mode not in ("fixture", "real"):
         raise ValueError("Investigation mode must be fixture or real")
@@ -72,6 +74,14 @@ def create_app(database_url: str | None = None, *, adapter: InvestigationAdapter
     default_path = Path(__file__).resolve().parents[1] / "mednav.db"
     url = database_url or os.getenv("MEDNAV_DATABASE_URL", f"sqlite:///{default_path.as_posix()}")
     engine, sessions = create_database(url)
+    if report_dir:
+        storage = Path(report_dir)
+    elif os.getenv("MEDNAV_REPORT_DIR"):
+        storage = Path(os.environ["MEDNAV_REPORT_DIR"])
+    elif url.startswith("sqlite:///") and ":memory:" not in url:
+        storage = Path(url.removeprefix("sqlite:///" )).parent / "reports"
+    else:
+        storage = Path(tempfile.mkdtemp(prefix="mednav-reports-"))
 
     @asynccontextmanager
     async def lifespan(app):
@@ -79,24 +89,46 @@ def create_app(database_url: str | None = None, *, adapter: InvestigationAdapter
         if seed_demo:
             with sessions() as session:
                 seed(session)
+        with sessions() as session:
+            from .reporting import backfill_investigation_medicines, transmit_pending
+            backfill_investigation_medicines(session)
+            transmit_pending(session, app)
+        async def retry_worker():
+            from .reporting import transmit_pending
+            while True:
+                await asyncio.sleep(2)
+                def run():
+                    with sessions() as session:
+                        transmit_pending(session, app)
+                await asyncio.to_thread(run)
+
+        worker = asyncio.create_task(retry_worker())
         try:
             yield
         finally:
+            worker.cancel()
+            try:
+                await worker
+            except asyncio.CancelledError:
+                pass
             engine.dispose()
 
     # Disable CDN-backed Swagger/ReDoc so even documentation endpoints are offline.
     app = FastAPI(title="MEDNAV Synthetic Backend", version="0.1.0", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.sessions = sessions
     app.state.engine = engine
+    app.state.report_dir = storage
     from .follow_ups import register_follow_ups
     register_follow_ups(app, db)
+    from .reporting import register_reporting
+    register_reporting(app, db)
     from .voice import router as voice_router
     app.include_router(voice_router)
     app.state.investigation_mode = mode
     from .real_engine import RealEngineService
     app.state.real_engine = RealEngineService() if mode == "real" else None
     app.state.investigation_adapter = (adapter if adapter is not None else FixtureAdapter()) if mode == "fixture" else None
-    app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["GET", "POST", "PATCH"], allow_headers=["Content-Type"])
+    app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["GET", "POST", "PATCH"], allow_headers=["Content-Type", "X-MEDNAV-Officer-Key"])
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):

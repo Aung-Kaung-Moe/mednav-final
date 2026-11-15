@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import wave
 import numpy as np
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
@@ -12,9 +13,21 @@ MODEL_ID = os.environ.get("MEDNAV_WHISPER_MODEL", "Systran/faster-whisper-tiny.e
 CHECKIN_HOTWORDS = (
     "headache, dizziness, fatigue, nausea, muscle discomfort, "
     "no symptoms, heart rate, blood pressure, sleep, systolic, diastolic, "
-    "bpm, hours, mmHg, unknown, Hey MEDNAV, MEDNAV, start health check, "
+    "bpm, hours, mmHg, unknown, Hey MEDNAV, Hello MEDNAV, MEDNAV, health check, "
     "read my recommendation, what is my heart rate, what data is missing"
 )
+
+
+def reliable_live_text(text: str, duration_s: float) -> bool:
+    """Discard implausible repetitions from short, live microphone segments."""
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    if not words:
+        return False
+    if len(words) > max(12, int(duration_s * 5.5) + 4):
+        return False
+    if len(words) >= 8 and max(words.count(word) for word in set(words)) / len(words) >= 0.65:
+        return False
+    return True
 
 app = FastAPI(title="MEDNAV Local Voice-to-Text Service")
 
@@ -49,8 +62,11 @@ def decode_wav_bytes(raw_bytes: bytes) -> np.ndarray | io.BytesIO:
                     dst_x = np.linspace(0.0, 1.0, target_len, endpoint=False)
                     audio = np.interp(dst_x, src_x, audio).astype(np.float32)
                 peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
-                if 0.01 < peak < 0.5:
-                    audio = np.clip(audio * (0.7 / peak), -1.0, 1.0).astype(np.float32)
+                rms = float(np.sqrt(np.mean(audio * audio))) if len(audio) else 0.0
+                if peak < 0.018 or rms < 0.004:
+                    return np.zeros_like(audio)
+                if peak < 0.35:
+                    audio = np.clip(audio * min(4.0, 0.35 / peak), -1.0, 1.0).astype(np.float32)
                 return audio
     except Exception:
         pass
@@ -84,6 +100,11 @@ async def transcribe_audio(
 
     try:
         audio_input = decode_wav_bytes(raw_bytes)
+        if isinstance(audio_input, np.ndarray) and audio_input.size:
+            peak = float(np.max(np.abs(audio_input)))
+            rms = float(np.sqrt(np.mean(audio_input * audio_input)))
+            if peak < 0.015 or rms < 0.003:
+                return {"text": "", "model": MODEL_ID, "duration_s": round(audio_input.size / 16000, 2)}
         segments, info = whisper_model.transcribe(
             audio_input,
             language="en",
@@ -97,17 +118,16 @@ async def transcribe_audio(
                 "min_silence_duration_ms": 500,
                 "speech_pad_ms": 350,
             },
-            initial_prompt=(
-                "Astronaut health check-in: no symptoms, headache, dizziness, fatigue, nausea, "
-                "muscle discomfort, heart rate 72 bpm, sleep 7.5 hours, "
-                "blood pressure 120 over 80 mmHg, systolic, diastolic, unknown."
-            ),
+            initial_prompt="MEDNAV astronaut health check. Measurements: heart rate, sleep, blood pressure.",
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()
+        duration = float(getattr(info, "duration", 0.0))
+        if segment_mode and not reliable_live_text(text, duration):
+            text = ""
         return {
             "text": text,
             "model": MODEL_ID,
-            "duration_s": round(getattr(info, "duration", 0.0), 2),
+            "duration_s": round(duration, 2),
         }
     except Exception as exc:
         raise HTTPException(

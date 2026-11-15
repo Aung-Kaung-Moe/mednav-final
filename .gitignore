@@ -17,5 +17,6 @@ frontend/dist/
 frontend/playwright-report/
 frontend/test-results/
 backend/.pytest_tmp/
+backend/reports/
 backend/models/**/.cache/
 backend/models/**/.gitattributes

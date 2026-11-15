@@ -6,6 +6,7 @@ export class LocalSpeaker {
   private url: string | null = null;
   private controller: AbortController | null = null;
   private complete: (() => void) | null = null;
+  private cache = new Map<string, ArrayBuffer>();
 
   async prime() {
     try { this.context ??= new AudioContext(); await this.context.resume(); }
@@ -25,12 +26,19 @@ export class LocalSpeaker {
     const controller = new AbortController(); this.controller = controller;
     const timeout = window.setTimeout(() => controller.abort(), 60000);
     try {
-      const response = await fetch('/piper/synthesize', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }), signal: controller.signal,
-      });
-      if (!response.ok) return false;
-      const bytes = await response.arrayBuffer();
+      let bytes = this.cache.get(text);
+      if (!bytes) {
+        const response = await fetch('/piper/synthesize', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }), signal: controller.signal,
+        });
+        if (!response.ok) return false;
+        bytes = await response.arrayBuffer();
+        if (!controller.signal.aborted && bytes.byteLength < 2_000_000) {
+          if (this.cache.size >= 12) this.cache.delete(this.cache.keys().next().value!);
+          this.cache.set(text, bytes);
+        }
+      }
       if (controller.signal.aborted || new TextDecoder('ascii').decode(bytes.slice(0, 4)) !== 'RIFF') return false;
       // Piper currently labels its WAV bytes text/html.
       const blob = new Blob([bytes], { type: 'audio/wav' });

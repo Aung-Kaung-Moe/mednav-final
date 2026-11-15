@@ -101,6 +101,14 @@ def test_iterative_narrowing_and_mission_rationing_by_crew_days_and_stock(client
     ctx = client.get("/api/v1/investigation/mission-context").json()
     acet = next(m for m in ctx["medications"] if m["id"] == "acetaminophen_500mg")
     assert acet["quantity"] == 24
+    preview = client.get("/api/v1/reports/preview", params={"astronaut_id": "Crew B"}).json()
+    taken = [m for m in preview["medications"] if m["incident_id"] == s["id"]]
+    assert len(taken) == 1
+    assert taken[0]["astronaut_id"] == "Crew B"
+    assert taken[0]["dose"] == "2 tablets"
+    assert taken[0]["status"] == "taken"
+    assert client.post(f"/api/v1/investigation/sessions/{s['id']}/dispense").status_code == 200
+    assert len([m for m in client.get("/api/v1/reports/preview", params={"astronaut_id": "Crew B"}).json()["medications"] if m["incident_id"] == s["id"]]) == 1
 
 
 def test_mild_headache_saves_medication(client):
@@ -176,3 +184,8 @@ def test_acute_fever_with_tight_reserve_still_allocates_and_includes_cotreatment
     )
     assert disp_sec.status_code == 200
     assert "oral_rehydration_salts" in disp_sec.json()["dispensed_secondary_ids"]
+    preview = client.get("/api/v1/reports/preview", params={"astronaut_id": "Crew A"}).json()
+    taken = [m for m in preview["medications"] if m["incident_id"] == s["id"]]
+    assert len(taken) == 1
+    assert taken[0]["medication_name"] == "Oral Rehydration Salts (ORS)"
+    assert taken[0]["dose"] == f"{next(item for item in s['secondary_allocations'] if item['medication_id'] == 'oral_rehydration_salts')['recommended_total_units']} packets"

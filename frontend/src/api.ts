@@ -11,12 +11,15 @@ import type {
   MedicationStockDTO,
   MissionContextDTO,
   SavedCheckIn as Saved,
+  MedicalReportDTO,
+  ReportSnapshotDTO,
+  EarthStatusDTO,
 } from './types/api';
 import {displayProfile, recordedProfile} from './types/api';
 export const API = (import.meta as unknown as {env:Record<string,string>}).env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1';
-async function request<T>(path:string, method='GET', body?:unknown):Promise<T>{
+async function request<T>(path:string, method='GET', body?:unknown, extraHeaders?:Record<string,string>):Promise<T>{
   let response:Response;
-  try { response=await fetch(API+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(10000)}); }
+  try { response=await fetch(API+path,{method,headers:{'Content-Type':'application/json',...extraHeaders},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(10000)}); }
   catch { throw new Error('Backend unavailable. Start FastAPI or explicitly select local fixture mode.'); }
   const data=await response.json();
   if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:`API ${response.status}: invalid request`);
@@ -73,6 +76,30 @@ export async function loadFollowUps(crewId:string,checkInId?:string):Promise<Fol
  }
 }
 export function createFollowUp(body:FollowUpCreate){return request<FollowUpEvent>('/follow-ups','POST',body);}
+const officer = (key:string) => ({'X-MEDNAV-Officer-Key':key});
+export const reportApi = {
+  preview: (astronautId:string) => request<ReportSnapshotDTO>(`/reports/preview?astronaut_id=${encodeURIComponent(astronautId)}`),
+  list: (astronautId:string) => request<MedicalReportDTO[]>(`/reports?astronaut_id=${encodeURIComponent(astronautId)}`),
+  get: (id:string) => request<MedicalReportDTO>(`/reports/${encodeURIComponent(id)}`),
+  create: (astronautId:string,reportType='Weekly Summary') => request<MedicalReportDTO>('/reports','POST',{astronaut_id:astronautId,report_type:reportType}),
+  regenerate: (id:string) => request<MedicalReportDTO>(`/reports/${encodeURIComponent(id)}/versions`,'POST'),
+  versions: (id:string) => request<{version:number;created_at:string;pdf_name:string;pdf_size:number;sha256:string}[]>(`/reports/${encodeURIComponent(id)}/versions`),
+  audit: (id:string) => request<{event:string;detail:string;version:number|null;recorded_at:string}[]>(`/reports/${encodeURIComponent(id)}/audit`),
+  reviews: (id:string) => request<{reviewer:string;outcome:string;notes:string;requested_measurements:string|null;follow_up_tasks:string|null;checklist_reviewed:boolean;recorded_at:string}[]>(`/reports/${encodeURIComponent(id)}/reviews`),
+  review: (id:string,key:string,body:{reviewer:string;outcome:string;notes:string;requested_measurements?:string;follow_up_tasks?:string;checklist_reviewed:boolean}) => request<MedicalReportDTO>(`/reports/${encodeURIComponent(id)}/reviews`,'POST',body,officer(key)),
+  medication: (key:string,body:{astronaut_id:string;medication_name:string;dose?:string;route?:string;status:string;taken_at?:string;source:string;recorded_by:string;confirmed:boolean}) => request<{id:string;recorded_at:string}>('/medication-administrations','POST',body,officer(key)),
+  queue: (id:string,key:string) => request<MedicalReportDTO>(`/reports/${encodeURIComponent(id)}/queue`,'POST',undefined,officer(key)),
+  retry: (id:string,key:string) => request<MedicalReportDTO>(`/reports/${encodeURIComponent(id)}/retry`,'POST',undefined,officer(key)),
+  earth: () => request<EarthStatusDTO>('/earth/status'),
+  setEarth: (online:boolean,key:string) => request<EarthStatusDTO>('/earth/status','POST',{online},officer(key)),
+  received: () => request<{id:string;report_id:string;version:number;sha256:string;received_at:string}[]>('/earth/received'),
+  pdfUrl: (id:string,version?:number,download=false) => {
+    const params=new URLSearchParams();
+    if(version)params.set('version',String(version));
+    if(download)params.set('download','true');
+    return `${API}/reports/${encodeURIComponent(id)}/pdf?${params}`;
+  },
+};
 export function useBackend(crewId:string,refreshOnFocus=true){
  const live=new URLSearchParams(location.search).get('mode')!=='fixture';
  const [profiles,setProfiles]=useState(crews),[inventory,setInventory]=useState(equipment),[medications,setMedications]=useState<MedicationStockDTO[]>([]),[flags,setFlags]=useState([false,false,false,false]);

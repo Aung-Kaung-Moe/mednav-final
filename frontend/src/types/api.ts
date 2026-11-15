@@ -146,3 +146,23 @@ export interface InvestigationSessionDTO {
  dispensed_secondary_ids: string[];
  synthetic: true;
 }
+
+export interface ReportSnapshotDTO {
+  schema_version:number; report_id:string; version:number; astronaut_id:string; astronaut_role:string;
+  mission_label:string; report_type:string; generated_at:string; period_start:string; period_end:string;
+  timezone:'UTC'; overview:string; review_status:string; transmission_status:string; synthetic:true;
+  measurements:{id:string;recorded_at:string;hr:number|null;sleep:number|null;bp:string|null;symptoms:string[];provenance:string}[];
+  days:string[]; daily:{hr:(number|null)[];sleep:(number|null)[];systolic:(number|null)[];diastolic:(number|null)[]};
+  baselines:{hr:number|null;sleep:number|null};
+  symptoms:{name:string;recorded_at:string;source:string;check_in_id:string;status:string;onset:string|null;severity:string|null}[];
+  medications:{id:string;astronaut_id:string;medication_name:string;dose:string|null;route:string|null;status:string;taken_at:string|null;recorded_at:string;source:string;notes:string|null;incident_id:string|null;recorded_by:string}[];
+  investigation:Record<string,unknown>|null;
+  review:{reviewer:string;outcome:string;notes:string;requested_measurements:string|null;follow_up_tasks:string|null;checklist_reviewed:boolean;recorded_at:string}|null;
+}
+
+export interface MedicalReportDTO {
+  id:string;astronaut_id:string;report_type:string;created_at:string;updated_at:string;version:number;
+  review_status:string;status:string;pdf_name:string;pdf_size:number;sha256:string;snapshot:ReportSnapshotDTO;
+  attempts:number;queued_at:string|null;last_attempt_at:string|null;acknowledged_at:string|null;receipt_id:string|null;error:string|null;
+}
+export interface EarthStatusDTO {simulated:true;online:boolean;updated_at:string|null;pending_count:number}

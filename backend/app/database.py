@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, create_engine, event
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -100,6 +100,105 @@ class InvestigationSessionRow(Base):
     dispensed: Mapped[bool] = mapped_column(Boolean, default=False)
     dispensed_medication_id: Mapped[str | None] = mapped_column(String, nullable=True)
     dispensed_units: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class MedicalReportRow(Base):
+    __tablename__ = "medical_reports"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    astronaut_id: Mapped[str] = mapped_column(ForeignKey("astronauts.id"), index=True)
+    report_type: Mapped[str] = mapped_column(String, default="Weekly Summary")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    current_version: Mapped[int] = mapped_column(Integer, default=0)
+    review_status: Mapped[str] = mapped_column(String, default="Pending Review")
+
+
+class ReportVersionRow(Base):
+    __tablename__ = "medical_report_versions"
+    __table_args__ = (UniqueConstraint("report_id", "version"),)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    report_id: Mapped[str] = mapped_column(ForeignKey("medical_reports.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    pdf_path: Mapped[str] = mapped_column(String)
+    pdf_name: Mapped[str] = mapped_column(String)
+    pdf_size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String)
+
+
+class MedicationAdministrationRow(Base):
+    __tablename__ = "medication_administrations"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    astronaut_id: Mapped[str] = mapped_column(ForeignKey("astronauts.id"), index=True)
+    medication_name: Mapped[str] = mapped_column(String)
+    dose: Mapped[str | None] = mapped_column(String, nullable=True)
+    route: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String)
+    taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    source: Mapped[str] = mapped_column(String)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    incident_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    recorded_by: Mapped[str] = mapped_column(String)
+
+
+class MedicalReviewRow(Base):
+    __tablename__ = "medical_officer_reviews"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    report_id: Mapped[str] = mapped_column(ForeignKey("medical_reports.id"), index=True)
+    reviewer: Mapped[str] = mapped_column(String)
+    outcome: Mapped[str] = mapped_column(String)
+    notes: Mapped[str] = mapped_column(String)
+    requested_measurements: Mapped[str | None] = mapped_column(String, nullable=True)
+    follow_up_tasks: Mapped[str | None] = mapped_column(String, nullable=True)
+    checklist_reviewed: Mapped[bool] = mapped_column(Boolean)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EarthLinkRow(Base):
+    __tablename__ = "earth_link_state"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    online: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ReportTransmissionRow(Base):
+    __tablename__ = "report_transmissions"
+    __table_args__ = (UniqueConstraint("report_id", "version"),)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    report_id: Mapped[str] = mapped_column(ForeignKey("medical_reports.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    idempotency_key: Mapped[str] = mapped_column(String, unique=True)
+    status: Mapped[str] = mapped_column(String)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    receipt_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class GroundReceiptRow(Base):
+    __tablename__ = "simulated_ground_receipts"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    idempotency_key: Mapped[str] = mapped_column(String, unique=True)
+    report_id: Mapped[str] = mapped_column(String)
+    version: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String)
+    pdf_path: Mapped[str] = mapped_column(String)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ReportAuditRow(Base):
+    __tablename__ = "medical_report_audit"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    report_id: Mapped[str] = mapped_column(ForeignKey("medical_reports.id"), index=True)
+    version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    event: Mapped[str] = mapped_column(String)
+    detail: Mapped[str] = mapped_column(String)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 def create_database(url: str):

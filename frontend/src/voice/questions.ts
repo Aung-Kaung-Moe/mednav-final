@@ -11,11 +11,11 @@ export const INITIAL_DRAFT:VoiceDraft={
   measurements:{resting_hr_bpm:null,sleep_hours:null,systolic_bp_mm_hg:null,diastolic_bp_mm_hg:null},
 }
 export const QUESTIONS:Record<QuestionStep,string>={
-  symptoms:'Are you experiencing any symptoms? For example, headache, dizziness, fatigue, or nausea. Say none if you have no symptoms.',
-  onset:'When did these symptoms begin? You may say unknown.',
-  heart_rate:'Have you measured your resting heart rate? Tell me the number in beats per minute, or say not measured.',
-  sleep:'How many hours did you sleep in your most recent sleep period? Or say unknown.',
-  blood_pressure:'What is your measured blood pressure? For example, 120 over 80, in millimeters of mercury. Or say not measured.',
+  symptoms:'Any symptoms? Say headache, dizziness, fatigue, nausea, or none.',
+  onset:'When did the symptoms begin? Say unknown if unsure.',
+  heart_rate:'What is your measured resting heart rate? Say the number, or not measured.',
+  sleep:'How many hours did you sleep? Say unknown if unsure.',
+  blood_pressure:'What is your measured blood pressure? Say 120 over 80, or not measured.',
   confirm:'',
 }
 export const NEXT_STEP:Record<Exclude<QuestionStep,'confirm'>,QuestionStep>={

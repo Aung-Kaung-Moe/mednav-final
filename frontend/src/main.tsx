@@ -15,16 +15,17 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { MissionConsole } from './components/MissionConsole';
+import { IncidentReportPage } from './components/IncidentReportPage';
 import { IterativeInvestigation } from './components/IterativeInvestigation';
 import { FollowUpPanel } from './components/FollowUpPanel';
 import VoiceAssistant from './voice/VoiceAssistant';
 import { configureVoiceDemo } from './voice/currentDemo';
 import type { InvestigationResponse } from './voice/types';
-import { VoiceCheckIn } from './components/VoiceCheckIn';
 import { Panel } from './components/ui';
 import { crews, symptomOptions, type Crew } from './data/fixtures';
 import type { MedicationStockDTO } from './types/api';
 import './styles.css';
+import './subpages.css';
 
 function playDoubleAlertSound(): void {
   try {
@@ -77,8 +78,6 @@ function App() {
   const backend=useBackend(crewId,page===0);
   const {profiles,inventory,flags}=backend;
   const [mobile, setMobile] = useState(false);
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All');
   const [inventoryAlert, setInventoryAlert] = useState<string | null>(null);
   const alertTimerRef = useRef<number | null>(null);
   const [voiceResponse, setVoiceResponse] = useState<InvestigationResponse | null>(null);
@@ -133,7 +132,7 @@ function App() {
     setFlags((f) => [f[0], nextCrew.bp !== null, f[2], f[3]]);
   };
 
-  const isConsolePage = [0, 5].includes(page);
+  const isConsolePage = page === 0;
 
   return (
     <div className="app-shell">
@@ -222,9 +221,6 @@ function App() {
               </select>
             </label>
 
-            <div className="prototype-label">
-              Synthetic Telemetry · Non-Diagnostic
-            </div>
           </div>
         </header>
 
@@ -256,6 +252,7 @@ function App() {
             go={go}
           />
         )}
+        {page === 5 && <IncidentReportPage crewId={crewId} go={go} />}
 
         {page === 1 && (!backend.live||backend.initialized) && (
           <CheckIn
@@ -263,6 +260,7 @@ function App() {
             crew={crew}
             save={backend.save}
             investigate={() => go(2)}
+            onBack={() => go(0)}
             live={backend.live}
           />
         )}
@@ -277,17 +275,38 @@ function App() {
               onStockChanged={() => backend.refreshMissionData()}
               go={go}
             />
-            {backend.live&&backend.result&&backend.savedId&&<FollowUpPanel key={`${crew.id}:${backend.savedId}`} crewId={crew.id} checkInId={backend.savedId}/>}
+            {backend.live&&backend.result&&backend.savedId&&<div className="investigation-followup"><FollowUpPanel key={`${crew.id}:${backend.savedId}`} crewId={crew.id} checkInId={backend.savedId}/></div>}
           </>
         )}
 
         {page === 4 && (!backend.live||backend.initialized) && (
-          <div className="space-subpage">
+          <div className="space-subpage inventory-page">
+            <div className="subpage-top-bar">
+              <button
+                type="button"
+                className="hairline-pill-btn"
+                onClick={() => go(0)}
+              >
+                Overview
+              </button>
+              <div className="wide-planetary-label">
+                M E D I C A L &nbsp; I N V E N T O R Y
+              </div>
+              <button
+                type="button"
+                className="hairline-pill-btn"
+                onClick={() => go(2)}
+              >
+                Investigation <ArrowUpRight size={14} />
+              </button>
+            </div>
+
             <div className="asymmetric-workspace-grid">
               <section className="left-telemetry-column">
                 <h1 className="section-sans-headline">
-                  Onboard Medical Inventory &amp; Medications
+                  Medical inventory
                 </h1>
+                <p className="subpage-lede">Review onboard medication stock and medical readiness.</p>
 
                 {inventoryAlert && (
                   <div
@@ -300,50 +319,10 @@ function App() {
                   </div>
                 )}
 
-                <div className="inventory-toolbar">
-                  <div
-                    className="preset-hairline-row"
-                    role="group"
-                    aria-label="Filter by category"
-                  >
-                    {[
-                      'All',
-                      'Medications',
-                      'Monitoring',
-                      'Documentation',
-                      'Imaging',
-                      'Supplies',
-                    ].map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        className={`hairline-pill-btn ${
-                          category === c ? 'active' : ''
-                        }`}
-                        onClick={() => setCategory(c)}
-                      >
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="filters">
-                    <label>
-                      Search inventory
-                      <input
-                        placeholder="Filter by name…"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                {(category === 'All' || category === 'Medications') && backend.medications.length > 0 && (
+                {backend.medications.length > 0 && (
                   <div className="inv-med-inventory-section">
                     <div className="hairline-telemetry-list">
                       {backend.medications
-                        .filter((m) => m.name.toLowerCase().includes(search.toLowerCase()))
                         .map((m) => (
                           <MedicationInventoryRow
                             key={m.id}
@@ -370,43 +349,6 @@ function App() {
                   </div>
                 )}
 
-                {category !== 'Medications' && (
-                  <div className="hairline-telemetry-list" style={{ marginTop: 18 }}>
-                    {inventory
-                      .filter(
-                        (e) =>
-                          e.name.toLowerCase().includes(search.toLowerCase()) &&
-                          (category === 'All' || e.category === category)
-                      )
-                      .map((e) => (
-                        <article
-                          className="equipment-hairline-row"
-                          key={e.name}
-                        >
-                          <div className="equip-row-left">
-                            <strong>{e.name}</strong>
-                            <span>
-                              {e.category} · Quantity {e.quantity} ·{' '}
-                              <em className={e.available ? 'ok-txt' : 'unknown-val'}>
-                                {e.available ? 'Usable' : 'Unavailable'}
-                              </em>
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            className="hairline-pill-btn"
-                            disabled={backend.busy||(!e.available&&e.quantity===0)}
-                            title={!e.available&&e.quantity===0?'Cannot enable zero-quantity equipment. Quantity changes require the inventory API.':undefined}
-                            onClick={() => {
-                              void backend.updateInventory(e.name,!e.available);
-                            }}
-                          >
-                            Mark {e.available ? 'Unavailable' : 'Usable'}
-                          </button>
-                        </article>
-                      ))}
-                  </div>
-                )}
               </section>
 
               <aside className="right-frosted-sheet inv-readiness-panel">
@@ -480,8 +422,6 @@ function Observation({ crew }: { crew: Crew }) {
         ['Heart Rate:', value(crew.hr, ' bpm')],
         ['Sleep Duration:', value(crew.sleep, ' hours')],
         ['Blood Pressure:', value(crew.bp, ' mmHg')],
-        ['Space Radiation (Daily):', value(crew.radiationDailyMsv, ' mSv/day')],
-        ['Microgravity Exercise (ARED):', value(crew.countermeasureMin, ' min')],
         ['Body Mass (SLAMMD):', value(crew.bodyMassKg, ' kg')],
         ['Ocular / SANS Check:', crew.ocularCheck ?? 'Unknown'],
         ['Reported Symptoms:', crew.symptoms.join(', ') || 'None reported'],
@@ -499,20 +439,20 @@ function CheckIn({
   crew,
   save,
   investigate,
+  onBack,
   live,
 }: {
   crew: Crew;
   save: (c: Crew) => Promise<void>;
   investigate: () => void;
-  live:boolean;
+  onBack: () => void;
+  live: boolean;
 }) {
   const [symptoms, setSymptoms] = useState(crew.symptoms);
   const [hr, setHr] = useState(crew.hr?.toString() || '');
   const [sleep, setSleep] = useState(crew.sleep?.toString() || '');
   const [sys, setSys] = useState(crew.bp?.split(' / ')[0] || '');
   const [dia, setDia] = useState(crew.bp?.split(' / ')[1] || '');
-  const [rad, setRad] = useState(crew.radiationDailyMsv?.toString() || '');
-  const [ared, setAred] = useState(crew.countermeasureMin?.toString() || '');
   const [mass, setMass] = useState(crew.bodyMassKg?.toString() || '');
   const [review, setReview] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -523,8 +463,6 @@ function CheckIn({
   const syncSensors = () => {
     setHr(crew.hr?.toString() ?? '');
     setSleep(crew.sleep?.toString() ?? '');
-    setRad(crew.radiationDailyMsv?.toString() ?? '');
-    setAred(crew.countermeasureMin?.toString() ?? '');
     setMass(crew.bodyMassKg?.toString() ?? '');
     setSyncedNotice(true);
   };
@@ -547,18 +485,27 @@ function CheckIn({
     hr: hr === '' ? null : Number(hr),
     sleep: sleep === '' ? null : Number(sleep),
     bp: sys && dia ? `${sys} / ${dia}` : null,
-    radiationDailyMsv: rad === '' ? null : Number(rad),
-    countermeasureMin: ared === '' ? null : Number(ared),
     bodyMassKg: mass === '' ? null : Number(mass),
   };
 
   return (
-    <div className="space-subpage">
+    <div className="space-subpage health-check-page">
+      <div className="subpage-top-bar">
+        <button
+          type="button"
+          className="hairline-pill-btn"
+          onClick={onBack}
+        >
+          Overview
+        </button>
+        <div className="wide-planetary-label">
+          H E A L T H &nbsp; C H E C K - I N
+        </div>
+        <span className="hairline-status-tag">{crew.id} · {crew.role}</span>
+      </div>
+
       <div className="asymmetric-workspace-grid">
         <section className="left-telemetry-column">
-          <div className="wide-planetary-label left-aligned">
-            H E A L T H &nbsp; C H E C K - I N &nbsp; · &nbsp; {crew.id.toUpperCase()}
-          </div>
           <h1 className="section-sans-headline">
             {saved
               ? 'Health Check-In Saved'
@@ -566,6 +513,7 @@ function CheckIn({
               ? 'Review Recorded Observations'
               : `Health Check-In for ${crew.id}`}
           </h1>
+          {!saved && !review && <p className="subpage-lede">Record symptoms and measurements for {crew.id}. Review every value before saving.</p>}
 
           {saved ? (
             <div className="checkin-saved-box">
@@ -646,35 +594,9 @@ function CheckIn({
                 </button>
               </div>
 
-              <VoiceCheckIn
-                onApply={(parsed) => {
-                  if (parsed.clearSymptoms) {
-                    setSymptoms([]);
-                  } else if (parsed.symptoms && parsed.symptoms.length > 0) {
-                    setSymptoms(parsed.symptoms);
-                  } else if (parsed.removeSymptoms?.length) {
-                    setSymptoms((previous) =>
-                      previous.filter((s) => !parsed.removeSymptoms!.includes(s))
-                    );
-                  }
-                  if (parsed.hr !== undefined && parsed.hr !== null) {
-                    setHr(parsed.hr);
-                  }
-                  if (parsed.sleep !== undefined && parsed.sleep !== null) {
-                    setSleep(parsed.sleep);
-                  }
-                  if (parsed.sys !== undefined && parsed.sys !== null) {
-                    setSys(parsed.sys);
-                  }
-                  if (parsed.dia !== undefined && parsed.dia !== null) {
-                    setDia(parsed.dia);
-                  }
-                }}
-              />
-
-              <fieldset>
+              <fieldset className="checkin-symptoms">
                 <div className="fieldset-header">
-                  <legend>1 · Symptoms (Tap to Toggle)</legend>
+                  <legend>1 · Symptoms</legend>
                   <button
                     type="button"
                     className={`hairline-pill-btn ${
@@ -682,7 +604,7 @@ function CheckIn({
                     }`}
                     onClick={() => setSymptoms([])}
                   >
-                    None Reported
+                    None reported
                   </button>
                 </div>
                 <div className="symptom-options">
@@ -699,7 +621,7 @@ function CheckIn({
                           )
                         }
                       />
-                      <span>{s}</span>
+                      <span className="symptom-name">{s}</span>
                     </label>
                   ))}
                 </div>
@@ -707,7 +629,7 @@ function CheckIn({
 
               <div className="vitals-section-head">
                 <strong>2 · Sensor Telemetry &amp; Manual Measurements</strong>
-                <span>Confirm synced values or mark Unknown</span>
+
               </div>
 
               <div className="form-grid">
@@ -720,7 +642,6 @@ function CheckIn({
                     step: 1,
                     min: 1,
                     decimals: 0,
-                    source: 'WEARABLE',
                   },
                   {
                     id: 1,
@@ -730,31 +651,10 @@ function CheckIn({
                     step: 0.5,
                     min: 0,
                     decimals: 1,
-                    source: 'WEARABLE',
-                  },
-                  {
-                    id: 4,
-                    label: 'Space radiation (mSv/day)',
-                    val: rad,
-                    set: setRad,
-                    step: 0.05,
-                    min: 0.01,
-                    decimals: 2,
-                    source: 'DOSIMETER',
-                  },
-                  {
-                    id: 5,
-                    label: 'ARED exercise (min)',
-                    val: ared,
-                    set: setAred,
-                    step: 10,
-                    min: 0,
-                    decimals: 0,
-                    source: 'STATION',
                   },
                   {
                     id: 6,
-                    label: 'Body mass SLAMMD (kg)',
+                    label: 'Body mass (kg)',
                     val: mass,
                     set: setMass,
                     step: 0.2,
@@ -766,39 +666,27 @@ function CheckIn({
                   const isUnknown = f.val === '';
                   return (
                     <div
-                      className={`field-card ${isUnknown ? 'is-unknown' : ''}`}
+                      className={`field-card ${isUnknown ? 'is-unknown' : ''} ${live && f.id >= 4 ? 'is-reference' : ''}`}
                       key={f.label}
                     >
                       <div className="field-card-head">
                         <label htmlFor={`field-${f.id}`}>{f.label}</label>
                         <div className="field-badge-group">
-                          <span
-                            className={`source-chip ${
-                              isUnknown ? 'unknown' : 'sensor'
-                            }`}
-                          >
-                            {isUnknown ? 'UNKNOWN' : f.source}
-                          </span>
-                          <button
+                          {!isUnknown && f.source && <span className="source-chip sensor">{f.source}</span>}
+                          {!(live && f.id >= 4) && <button
                             type="button"
                             className="unknown-option"
                             aria-pressed={isUnknown}
-                            disabled={live && f.id >= 4}
                             onClick={() => f.set('')}
                           >
-                            Unknown
-                          </button>
+                            {isUnknown ? 'Unknown' : 'Mark unknown'}
+                          </button>}
                         </div>
                       </div>
                       <div className="field-stepper-input">
                         <input
                           id={`field-${f.id}`}
                           readOnly={live && f.id >= 4}
-                          title={
-                            live && f.id >= 4
-                              ? 'Illustrative only: no approved persistence contract.'
-                              : undefined
-                          }
                           type="number"
                           min={f.min}
                           max={f.id === 1 ? 24 : undefined}
@@ -807,11 +695,10 @@ function CheckIn({
                           placeholder="Unknown"
                           onChange={(e) => f.set(e.target.value)}
                         />
-                        <div className="field-step-actions">
+                        {!(live && f.id >= 4) && <div className="field-step-actions">
                           <button
                             type="button"
                             className="field-step-btn"
-                            disabled={live && f.id >= 4}
                             aria-label={`Decrease ${f.label}`}
                             onClick={() =>
                               stepValue(f.val, f.set, -f.step, f.min, f.decimals)
@@ -822,7 +709,6 @@ function CheckIn({
                           <button
                             type="button"
                             className="field-step-btn"
-                            disabled={live && f.id >= 4}
                             aria-label={`Increase ${f.label}`}
                             onClick={() =>
                               stepValue(f.val, f.set, f.step, f.min, f.decimals)
@@ -830,7 +716,7 @@ function CheckIn({
                           >
                             +
                           </button>
-                        </div>
+                        </div>}
                       </div>
                     </div>
                   );
@@ -843,15 +729,9 @@ function CheckIn({
                   }`}
                 >
                   <div className="field-card-head">
-                    <label htmlFor="field-2">Blood pressure (mmHg)</label>
+                    <span className="field-label">Blood pressure (mmHg)</span>
                     <div className="field-badge-group">
-                      <span
-                        className={`source-chip ${
-                          !sys && !dia ? 'unknown' : 'sensor'
-                        }`}
-                      >
-                        {!sys && !dia ? 'UNKNOWN' : 'MANUAL'}
-                      </span>
+                      {(sys || dia) && <span className="source-chip sensor">MANUAL</span>}
                       <button
                         type="button"
                         className="unknown-option"
@@ -861,32 +741,32 @@ function CheckIn({
                           setDia('');
                         }}
                       >
-                        Unknown
+                        {(!sys && !dia) ? 'Unknown' : 'Mark unknown'}
                       </button>
                     </div>
                   </div>
                   <div className="bp-dual-inputs">
-                    <input
+                    <label htmlFor="field-2"><span>Systolic</span><input
                       id="field-2"
                       type="number"
                       min={1}
                       step="any"
                       value={sys}
-                      placeholder="Systolic"
+                      placeholder="—"
                       aria-label="Systolic (mmHg)"
                       onChange={(e) => setSys(e.target.value)}
-                    />
+                    /></label>
                     <span className="bp-slash">/</span>
-                    <input
+                    <label htmlFor="field-3"><span>Diastolic</span><input
                       id="field-3"
                       type="number"
                       min={1}
                       step="any"
                       value={dia}
-                      placeholder="Diastolic"
+                      placeholder="—"
                       aria-label="Diastolic (mmHg)"
                       onChange={(e) => setDia(e.target.value)}
-                    />
+                    /></label>
                   </div>
                 </div>
               </div>
@@ -907,16 +787,22 @@ function CheckIn({
           )}
         </section>
 
-        <aside className="right-frosted-sheet">
-          <div className="wide-planetary-label left-aligned">
-            C H E C K - I N &nbsp; S U M M A R Y
+        <aside className={`right-frosted-sheet checkin-summary-card ${!saved && !review ? 'checkin-summary-aligned' : ''}`} aria-label="Check-in summary">
+          <div className="checkin-summary-top">
+            <span className="checkin-summary-eyebrow">CHECK-IN SUMMARY</span>
+            <h3>{crew.id}</h3>
+            <p>{crew.role}</p>
           </div>
-          <h3>{crew.id} · {crew.role}</h3>
-          <Observation crew={draft} />
-          <div className="sheet-divider" />
-          <p className="sheet-footnote">
-            Missing values remain <b>Unknown</b> and are never assumed normal.
-          </p>
+          <div className="checkin-summary-vitals">
+            <div><span>Heart rate</span><strong className={draft.hr === null ? 'unknown-val' : ''}>{value(draft.hr, ' bpm')}</strong></div>
+            <div><span>Sleep duration</span><strong className={draft.sleep === null ? 'unknown-val' : ''}>{value(draft.sleep, ' hours')}</strong></div>
+            <div className="checkin-summary-bp"><span>Blood pressure</span><strong className={draft.bp === null ? 'unknown-val' : ''}>{value(draft.bp, ' mmHg')}</strong></div>
+          </div>
+          <div className="checkin-summary-symptoms">
+            <span>Symptoms</span>
+            {draft.symptoms.length ? <div className="checkin-summary-tags">{draft.symptoms.map(symptom => <span key={symptom}>{symptom}</span>)}</div> : <p>None reported</p>}
+          </div>
+          <p className="checkin-summary-note">Unknown values stay unknown until recorded.</p>
         </aside>
       </div>
     </div>

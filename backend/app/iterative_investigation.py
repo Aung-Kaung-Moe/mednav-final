@@ -25,6 +25,7 @@ from .database import (
     CheckInRow,
     InventoryRow,
     InvestigationSessionRow,
+    MedicationAdministrationRow,
     MedicationStockRow,
     MissionConfigRow,
     SeedVersion,
@@ -1185,6 +1186,24 @@ def submit_session_answer(
     return evaluate_session_state(session, row)
 
 
+def _record_taken_medication(session: Session, investigation: InvestigationSessionRow,
+                             medication: MedicationStockRow, units: int, taken_at: datetime) -> None:
+    session.add(MedicationAdministrationRow(
+        id=f"investigation:{investigation.id}:{medication.id}",
+        astronaut_id=investigation.astronaut_id,
+        medication_name=medication.name,
+        dose=f"{units} {medication.unit}",
+        route=None,
+        status="taken",
+        taken_at=taken_at,
+        recorded_at=taken_at,
+        source="Investigation Take confirmation",
+        notes="Confirmed Take action; onboard inventory reduced by the documented amount.",
+        incident_id=investigation.id,
+        recorded_by=investigation.astronaut_id,
+    ))
+
+
 def dispense_session_allocation(
     session: Session,
     session_id: str,
@@ -1223,10 +1242,12 @@ def dispense_session_allocation(
         if med.quantity < alloc.recommended_total_units:
             raise ValueError("Insufficient stock remaining in inventory")
         med.quantity -= alloc.recommended_total_units
+        now = datetime.now(timezone.utc)
+        _record_taken_medication(session, row, med, alloc.recommended_total_units, now)
         taken_sec.append(med.id)
         answers["_dispensed_secondary"] = taken_sec
         row.answers = answers
-        row.updated_at = datetime.now(timezone.utc)
+        row.updated_at = now
         session.commit()
         return evaluate_session_state(session, row)
 
@@ -1242,9 +1263,11 @@ def dispense_session_allocation(
         raise ValueError("Insufficient stock remaining in inventory")
 
     med.quantity -= alloc.recommended_total_units
+    now = datetime.now(timezone.utc)
+    _record_taken_medication(session, row, med, alloc.recommended_total_units, now)
     row.dispensed = True
     row.dispensed_medication_id = med.id
     row.dispensed_units = alloc.recommended_total_units
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = now
     session.commit()
     return evaluate_session_state(session, row)

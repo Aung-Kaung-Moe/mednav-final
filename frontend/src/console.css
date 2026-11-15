@@ -148,12 +148,17 @@
 }
 
 .dashboard-header-bar {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-end;
   gap: 20px;
-  flex-wrap: wrap;
   margin-bottom: 28px;
+}
+
+@media (max-width: 1560px) {
+  .dashboard-header-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .dashboard-header-bar .section-sans-headline {
@@ -934,21 +939,34 @@
 
 .asymmetric-workspace-grid {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 56px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+  gap: 22px;
+  align-items: stretch;
 }
 
 .left-telemetry-column {
   min-width: 0;
+  background: #0b0c10;
+  border: 1px solid var(--hairline);
+  border-radius: 20px;
+  padding: 24px 26px;
+  display: flex;
+  flex-direction: column;
 }
 
 .right-frosted-sheet {
-  background: var(--bg-frosted);
+  background: #0b0c10;
   backdrop-filter: blur(20px);
-  border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  padding: 30px;
+  border-radius: 20px;
+  border: 1px solid var(--hairline);
+  padding: 24px 26px;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-frosted-sheet .export-json-btn {
+  margin-top: auto;
+  padding-top: 12px;
 }
 
 .sheet-divider {
@@ -2421,7 +2439,7 @@
 
 .mht-body-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
@@ -2640,12 +2658,47 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px 20px;
-  padding: 12px 18px;
-  margin-bottom: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  gap: 12px 18px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border: 1px solid var(--hairline);
   border-radius: 14px;
-  background: rgba(12, 16, 26, 0.78);
+  background: #0b0c10;
+}
+
+.inv-mission-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.inv-accent-icon {
+  color: var(--cobalt-glow);
+  flex-shrink: 0;
+}
+
+.inv-test-details {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.inv-test-details summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.inv-test-details[open] summary {
+  border-color: var(--cobalt-glow);
+  margin-bottom: 10px;
 }
 
 .inv-mission-metric {
@@ -2752,39 +2805,59 @@
 
 .inv-workspace {
   display: grid;
-  grid-template-columns: 1.35fr 0.95fr;
-  gap: 24px;
-  padding: 22px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.95fr);
+  gap: 20px;
+  align-items: stretch;
 }
 
 .inv-main-column {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
+  min-width: 0;
 }
 
 .inv-snapshot-strip {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  padding: 12px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  background: rgba(7, 10, 17, 0.65);
+}
+
+.inv-snap-card {
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: #0b0c10;
+}
+
+.inv-snap-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
 }
 
 .inv-snapshot-strip p {
-  margin: 4px 0 0;
-  font-size: 13px;
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text-primary);
 }
 
 .inv-question-card,
 .inv-outcome-card {
-  padding: 18px 20px;
+  flex: 1;
+  padding: 22px 24px;
   border: 1px solid rgba(91, 155, 213, 0.35);
-  border-radius: 14px;
-  background: rgba(11, 16, 28, 0.85);
+  border-radius: 16px;
+  background: #0b0c10;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .inv-outcome-card.is-escalated {
@@ -2801,15 +2874,87 @@
 }
 
 .inv-question-prompt {
-  margin: 8px 0;
-  font-size: 19px;
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 700;
   line-height: 1.35;
+  color: var(--text-primary);
 }
 
 .inv-question-rationale {
-  margin: 0 0 14px;
-  font-size: 13px;
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--text-secondary);
+}
+
+.inv-outcome-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.inv-outcome-icon {
+  color: #4ade80;
+  flex-shrink: 0;
+}
+
+.inv-outcome-summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.inv-opt-arrow {
+  opacity: 0.65;
+  flex-shrink: 0;
+}
+
+.inv-sources-details {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: #0b0c10;
+  padding: 10px 14px;
+}
+
+.inv-sources-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.inv-sources-details[open] summary {
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+
+.inv-hypotheses-col {
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: #0b0c10;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.inv-side-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.inv-devices-box {
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
 }
 
 .inv-equipment-tag {
@@ -3223,6 +3368,130 @@
   color: var(--text-secondary);
 }
 
+/* ==========================================================================
+   INCIDENT REPORT SCANNABLE CARDS & INVENTORY TOOLBAR POLISH
+   ========================================================================== */
+
+.inventory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px 16px;
+  margin-bottom: 18px;
+}
+
+.ir-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.ir-cards-col {
+  gap: 18px;
+  padding: 20px;
+}
+
+.ir-section-card {
+  display: grid;
+  gap: 12px;
+}
+
+.ir-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ir-card-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ir-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.ir-kv-tile {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 3px;
+}
+
+.ir-kv-tile dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ir-kv-tile dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ir-rationale-panel {
+  gap: 14px;
+}
+
+.ir-rationale-panel h3 {
+  margin: 4px 0 0;
+  font-size: 19px;
+}
+
+.ir-rationale-block {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.ir-block-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.ir-rationale-block p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 960px) {
+  .ir-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .ir-summary-grid,
+  .ir-kv-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .inv-stock-watch-list {
   list-style: none;
   margin: 0;
@@ -3283,4 +3552,128 @@
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   INCIDENT REPORT SCANNABLE CARDS & INVENTORY TOOLBAR POLISH
+   ========================================================================== */
+
+.inventory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px 16px;
+  margin-bottom: 18px;
+}
+
+.ir-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.ir-cards-col {
+  gap: 18px;
+  padding: 20px;
+}
+
+.ir-section-card {
+  display: grid;
+  gap: 12px;
+}
+
+.ir-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ir-card-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ir-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.ir-kv-tile {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 3px;
+}
+
+.ir-kv-tile dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ir-kv-tile dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ir-rationale-panel {
+  gap: 14px;
+}
+
+.ir-rationale-panel h3 {
+  margin: 4px 0 0;
+  font-size: 19px;
+}
+
+.ir-rationale-block {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.ir-block-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.ir-rationale-block p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 960px) {
+  .ir-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .ir-summary-grid,
+  .ir-kv-grid {
+    grid-template-columns: 1fr;
+  }
 }

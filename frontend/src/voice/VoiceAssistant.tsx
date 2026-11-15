@@ -6,10 +6,19 @@ import { COMMANDS, matchCommand, normalized, parseWake } from './commands'
 import { INITIAL_DRAFT, NEXT_STEP, QUESTIONS, draftSummary, isUnknown, parseBP, parseSymptoms, spokenNumber, type QuestionStep, type VoiceDraft } from './questions'
 import type { OfflineRecognizer } from './recognizer'
 import { LocalSpeaker } from './speaker'
+import { reportApi } from '../api'
 import './voice.css'
 
 type VoiceStep = QuestionStep | 'pulse_beats' | null
 type NavPage = 'dashboard'|'crew'|'investigation'|'trends'|'inventory'|'reports'|'research'|'settings'
+const SPOKEN_QUESTIONS: Record<QuestionStep,string> = {
+  symptoms:'Any symptoms? Say a symptom, or none.',
+  onset:'When did the symptoms begin?',
+  heart_rate:'What was your measured heart rate?',
+  sleep:'How many hours did you sleep?',
+  blood_pressure:'What was your measured blood pressure?',
+  confirm:'',
+}
 const responseOrUnknown=(n:number|null,unit:string)=>n===null?'Not available':`${n} ${unit}`
 const lastAvailable=(history:HealthHistory,key:'resting_hr_bpm'|'sleep_hours')=>{
   const records=[...history.series].sort((a,b)=>a.observed_at.localeCompare(b.observed_at))
@@ -29,17 +38,17 @@ function speechRecommendation(result:InvestigationResponse):string {
 export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate:(page:NavPage)=>void}) {
   const [open,setOpen]=useState(false)
   const [listening,setListening]=useState(false)
+  const [hearing,setHearing]=useState(false)
   const [loading,setLoading]=useState(false)
   const [processing,setProcessing]=useState(false)
   const [ttsMissing,setTtsMissing]=useState(false)
   const [mode,setMode]=useState<UiMode>('demo')
   const [error,setError]=useState('')
   const [transcript,setTranscript]=useState('')
-  const [replyText,setReplyText]=useState('Say “Hey MEDNAV” to begin, or “Health Check” to start a check-in.')
+  const [replyText,setReplyText]=useState('Say “Hey MEDNAV” or “Hello MEDNAV” to begin, or “Health Check” to start a check-in.')
   const [testText,setTestText]=useState('')
   const [awake,setAwake]=useState(false)
   const [step,setStep]=useState<VoiceStep>(null)
-  const [draft,setDraft]=useState<VoiceDraft>(()=>structuredClone(INITIAL_DRAFT))
   const [lastResult,setLastResult]=useState<InvestigationResponse|null>(null)
   const [isSaving,setIsSaving]=useState(false)
   const [pulseSeconds,setPulseSeconds]=useState(60)
@@ -56,32 +65,39 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
   const pulseEndAt=useRef<number>(0)
   const latestConfirmed=useRef<{crew:string;measurements:VoiceDraft['measurements'];observed_at:string;id:string}|null>(null)
   const handling=useRef(false)
+  const speaking=useRef(false)
+  const speechVersion=useRef(0)
+  const pendingSpeech=useRef('')
+  const offeredCheck=useRef(false)
   const lastSpoken=useRef('')
+  const lastAudioText=useRef('')
   const onSpeech=useRef<(value:string)=>Promise<void>>(async()=>{})
   const listeningGeneration=useRef(0)
   const starting=useRef(false)
 
-  const setCurrentDraft=(next:VoiceDraft)=>{draftRef.current=next;setDraft(next)}
+  const setCurrentDraft=(next:VoiceDraft)=>{draftRef.current=next}
   const setCurrentStep=(next:VoiceStep)=>{stepRef.current=next;setStep(next)}
   const setActive=(value:boolean)=>{awakeRef.current=value;setAwake(value)}
 
-  const say=useCallback(async(text:string)=>{
+  const say=useCallback(async(text:string,spokenText=text)=>{
     setReplyText(text)
     lastSpoken.current=text
-    if(recog.current)recog.current.paused=true
+    lastAudioText.current=spokenText
+    const version=++speechVersion.current
+    speaking.current=true
+    recog.current?.setInterruptMode(true)
     try {
-      const played=await speaker.current.say(text)
-      setTtsMissing(!played)
+      const played=await speaker.current.say(spokenText)
+      if(version===speechVersion.current)setTtsMissing(!played)
     }finally{
-      // Prevent the microphone from hearing its own speaker.
-      await new Promise(resolve=>setTimeout(resolve,350))
-      if(recog.current)recog.current.paused=false
+      // Echo cancellation keeps capture running so a caller can interrupt Piper.
+      if(version===speechVersion.current){speaking.current=false;recog.current?.setInterruptMode(false)}
     }
-  },[listening])
+  },[])
 
   const ask=useCallback(async(next:QuestionStep,d:VoiceDraft=draftRef.current)=>{
     setCurrentStep(next)
-    await say(next==='confirm'?draftSummary(d):QUESTIONS[next])
+    await say(next==='confirm'?draftSummary(d):QUESTIONS[next],next==='confirm'?draftSummary(d):SPOKEN_QUESTIONS[next])
   },[say])
 
   const getHistory=useCallback(()=>apiFor(mode).health(crew),[mode,crew])
@@ -193,15 +209,34 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
 
   const process=useCallback(async(utterance:string)=>{
     const text=utterance.trim()
-    if(!text||handling.current||isSaving) return
+    if(!text||isSaving) return
+    const clean=normalized(text)
+    if(speaking.current && clean.split(' ').length >= 2 && normalized(lastAudioText.current).includes(clean)) return
+    const stop=['stop','stop listening','stop microphone'].includes(clean)
+    const wake=parseWake(text)
+    const commandText=wake.woke&&wake.remainder?wake.remainder:text
+    const command=matchCommand(commandText)
+    const affirmative=/^(yes|yeah|yep|sure|okay|ok|please do|let s do it|start it)$/.test(clean)
+    // A new command or questionnaire answer cuts off the current reply immediately.
+    if(speaking.current && (stop || wake.woke || command || (offeredCheck.current&&affirmative) || stepRef.current)) {
+      pendingSpeech.current=text
+      speechVersion.current++
+      speaking.current=false
+      recog.current?.setInterruptMode(false)
+      speaker.current.stop()
+      if(handling.current)return
+      pendingSpeech.current=''
+    }
+    if(handling.current)return
     handling.current=true
     setProcessing(true)
     setTranscript(text);setError('')
     try {
-      if(['stop','stop listening','stop microphone'].includes(normalized(text))){
+      if(stop){
+        offeredCheck.current=false
         listeningGeneration.current++
         const instance=recog.current;recog.current=null
-        setListening(false);setActive(false);setCurrentStep(null);setPulseRunning(false)
+        setListening(false);setHearing(false);setActive(false);setCurrentStep(null);setPulseRunning(false)
         await instance?.stop()
         setOpen(false)
         await say('Microphone stopped. Select Voice AI to listen again.')
@@ -211,15 +246,15 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
       if(/\b(emergency|severe chest pain|unconscious|can't breathe|cannot breathe|difficulty breathing|loss of consciousness)\b/i.test(text)){
         setCurrentStep(null);setPulseRunning(false);await say('Possible emergency language heard. Do not rely on this prototype for triage. Follow the mission-approved emergency protocol and seek medical officer review immediately. No treatment has been selected.');return
       }
-      const wake=parseWake(text)
-      if(wake.woke){setOpen(true);setActive(true);if(!wake.remainder) {await say(`Hello, astronaut ${crew}. I am MEDNAV. Would you like to start a health check?`);return}}
+      if(wake.woke){setOpen(true);setActive(true);if(!wake.remainder) {offeredCheck.current=true;await say(`Hello, astronaut ${crew}. I am MEDNAV. Would you like to start a health check?`);return}}
       const textToMatch=wake.woke&&wake.remainder?wake.remainder:text
-      const directIntent=matchCommand(textToMatch)
+      const directIntent=offeredCheck.current&&affirmative?'start_check':matchCommand(textToMatch)
       if(!awakeRef.current && !wake.woke) {
         if(directIntent==='start_check') {setOpen(true);setActive(true)}
         else return
       }
       if(stepRef.current){await handleQuestion(textToMatch,stepRef.current);return}
+      offeredCheck.current=false
       const intent=directIntent
       switch(intent){
        case 'wake':setActive(true);await say(`Hello, astronaut ${crew}. Say start health check or ask me for recorded measurements.`);break
@@ -229,6 +264,24 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
        case 'sleep':await readHistory('sleep');break
        case 'blood_pressure':await readHistory('blood_pressure');break
        case 'history':onNavigate('trends');await say('Opening the stored heart-rate and sleep trends. Gaps represent unknown measurements.');break
+       case 'report_generate':onNavigate('reports');await say('The medical report page is open. Select Generate PDF report to confirm creation. Voice recognition will not create or transmit a report without your confirmation.');break
+       case 'report_open':onNavigate('reports');await say('Opening your saved medical incident reports and simulated Earth communication status.');break
+       case 'report_pending':{
+         try{const status=await reportApi.earth();await say(`${status.pending_count} PDF reports are pending in the local simulated Earth queue.`)}catch{await say('The local report queue is unavailable.')}break
+       }
+       case 'report_weekly':case 'report_heart':case 'report_symptoms':case 'report_medications':case 'report_status':case 'report_review':{
+         try{
+           const reports=await reportApi.list(crew);const latest=reports[0];
+           if(!latest){await say('No saved medical report is available for this astronaut.');break}
+           onNavigate('reports');
+           if(intent==='report_weekly')await say(`The latest synthetic report covers ${latest.snapshot.measurements.length} recorded check-ins over seven UTC calendar days. The report page shows the available charts and missing data.`)
+           if(intent==='report_heart'){const values=latest.snapshot.measurements.map(r=>r.hr).filter((v):v is number=>v!==null);await say(values.length?`${values.length} heart rate readings were recorded. The latest is ${values.at(-1)} beats per minute. Open the report for the full dated chart.`:'No heart rate readings were recorded in this report period.')}
+           if(intent==='report_symptoms')await say(latest.snapshot.symptoms.length?`Reported symptoms this week: ${latest.snapshot.symptoms.map(s=>s.name).join(', ')}. These are reports, not diagnoses.`:'No symptoms were reported in this report period.')
+           if(intent==='report_medications')await say(latest.snapshot.medications.length?`Documented medication administrations: ${latest.snapshot.medications.map(m=>`${m.medication_name}, ${m.status}`).join(', ')}.`:'No medication administration records are available for this report period.')
+           if(intent==='report_status')await say(latest.status==='DELIVERED'?'The PDF was acknowledged by the local simulated ground station.':`The PDF status is ${latest.status.replaceAll('_',' ').toLowerCase()}. No real Earth station is connected.`)
+           if(intent==='report_review')await say(latest.snapshot.review?`Medical officer review: ${latest.snapshot.review.outcome}, recorded by ${latest.snapshot.review.reviewer}.`:'No authorized medical officer review is recorded.')
+         }catch{await say('The saved report could not be retrieved from the local backend.')}break
+       }
        case 'missing':{
          if(recentResult.current){await say(`Most recent investigation missing: ${recentResult.current.missing_data.length?recentResult.current.missing_data.join(', ').replaceAll('_',' '):'none reported'}.`)}
          else {const m=draftRef.current.measurements;const missing=Object.entries(m).filter(([,v])=>v===null).map(([k])=>k.replaceAll('_',' '));await say(`Current questionnaire missing information: ${missing.join(', ')||'none'}. This is not a diagnosis.`)}
@@ -256,13 +309,19 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
          else {setActive(false);setCurrentStep(null);setPulseRunning(false);await say('Voice session closed. Say Hey MEDNAV to reactivate.')}break
        default:await say('I did not confidently recognize that command. Please try: start health check, heart rate, missing data, equipment, or read my recommendation.');break
       }
-    } finally {handling.current=false;setProcessing(false)}
+    } finally {
+      handling.current=false;setProcessing(false)
+      const queued=pendingSpeech.current
+      pendingSpeech.current=''
+      if(queued)queueMicrotask(()=>{void onSpeech.current(queued)})
+    }
   },[crew,mode,onNavigate,say,ask,readHistory,handleQuestion,isSaving,investigate])
   useEffect(()=>{
     // Never read the previous astronaut's recommendation or manually entered value.
     recentResult.current=null;setLastResult(null);latestConfirmed.current=null
     setCurrentStep(null);setCurrentDraft(structuredClone(INITIAL_DRAFT));setPulseRunning(false)
     setLastCheckinId('');setActive(false);storedConfirmed.current=null;manuallyCountedHr.current=null
+    offeredCheck.current=false
   },[crew])
   useEffect(()=>{onSpeech.current=process},[process])
 
@@ -303,17 +362,17 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
     try{
       const { OfflineRecognizer } = await import('./recognizer')
       if(generation!==listeningGeneration.current)return
-      const instance=new OfflineRecognizer(s=>{void onSpeech.current(s)},message=>setError(message))
+      const instance=new OfflineRecognizer(s=>{void onSpeech.current(s)},message=>setError(message),setHearing)
       recog.current=instance
       await instance.start()
       if(generation!==listeningGeneration.current){await instance.stop();return}
       void speaker.current.prime()
       setListening(true)
-      setReplyText('Listening. Say “Hey MEDNAV” or “Health Check”. Say “Stop” to turn off the microphone.')
+      setReplyText('Listening. Say “Hey MEDNAV”, “Hello MEDNAV”, or “Health Check”. Say “Stop” to turn off the microphone.')
     }catch(err){
       if(generation!==listeningGeneration.current)return
       const m=err instanceof Error?err.message:'Could not enable local voice recognition.'
-      setError(m);setListening(false);recog.current=null
+      setError(m);setListening(false);setHearing(false);recog.current=null
     }finally{if(generation===listeningGeneration.current){starting.current=false;setLoading(false)}}
   }
   function typedCommand(e:FormEvent){
@@ -326,13 +385,12 @@ export default function VoiceAssistant({crew,onNavigate}:{crew:string;onNavigate
   }
 
   return <>
-    {!open&&<button className="voice-fab" onClick={()=>{setOpen(true);if(!recog.current)void startListening()}} aria-label="Open MEDNAV offline voice assistant"><Mic size={19}/><span>VOICE AI</span><i className={listening?'voice-dot listening':'voice-dot'}/></button>}
+    {!open&&<button className={`voice-fab ${listening?'listening':''} ${hearing?'hearing':''}`} onClick={()=>{setOpen(true);if(!recog.current)void startListening()}} aria-label="Open MEDNAV offline voice assistant" title={hearing?'Voice detected':listening?'Voice AI listening':'Open Voice AI'}><Mic size={30} aria-hidden="true"/></button>}
     {open&&<section className="voice-panel" aria-label="MEDNAV voice assistant">
       <div className="voice-panel-head"><div><span className="voice-overline">LOCAL MISSION ASSISTANT</span><strong><Activity size={17}/> MEDNAV VOICE</strong></div><button aria-label="Close assistant" onClick={()=>setOpen(false)}><X size={17}/></button></div>
-      <div className="voice-state"><span className={`voice-indicator ${listening?'online':''}`}/>{loading?'CONNECTING TO LOCAL VOICE SERVICE':processing?'MEDNAV RESPONDING':listening?step?'LISTENING FOR ANSWER':awake?'LISTENING':'SAY “HEY MEDNAV”':'MICROPHONE OFF'}<small>CREW {crew} · {mode==='demo'?'SYNTHETIC DEMO':'LOCAL API'}</small></div>
-      <p className="voice-hint">{listening?'Say “Hey MEDNAV” to call me · “Stop” turns off the microphone.':'Open Voice AI again to restart listening.'}</p>
+      <div className="voice-state"><span className={`voice-indicator ${listening?'online':''} ${hearing?'hearing':''}`}/>{loading?'CONNECTING TO LOCAL VOICE SERVICE':processing?'MEDNAV RESPONDING':listening?step?'LISTENING FOR ANSWER':awake?'LISTENING':'SAY “HEY MEDNAV”':'MICROPHONE OFF'}<small>CREW {crew} · {mode==='demo'?'SYNTHETIC DEMO':'LOCAL API'}</small></div>
+      <p className="voice-hint">{listening?'Say “Hey” or “Hello MEDNAV” to call me · “Stop” turns off the microphone.':'Open Voice AI again to restart listening.'}</p>
       <div className="voice-dialog"><div className="voice-response" aria-live="polite"><small>MEDNAV RESPONSE</small><p>{replyText}</p></div>{transcript&&<div className="voice-transcript"><small>HEARD</small><p>{transcript}</p></div>}</div>
-      {step&&<div className="voice-question-state"><strong>{step==='pulse_beats'?'PULSE COUNT ENTRY':`QUESTION: ${step.toUpperCase().replace('_',' ')}`}</strong><p>{step==='confirm'?'Confirmation required before saving.':step==='pulse_beats'?'Say your manually counted number of beats.':QUESTIONS[step]}</p><p className="voice-mini">Current draft: {draft.symptoms.join(', ')||'no symptoms'} · HR {draft.measurements.resting_hr_bpm??'Unknown'} · Sleep {draft.measurements.sleep_hours??'Unknown'}</p></div>}
       {pulseRunning&&<div className="voice-timer"><Timer size={18}/><strong>Manual pulse timer: {pulseSeconds}s</strong><button onClick={()=>{setPulseRunning(false);setCurrentStep(null);setReplyText('Pulse timer cancelled. Nothing was measured or saved.')}}>Cancel timer</button></div>}
       {lastResult&&<div className="voice-investigation-result"><ShieldAlert size={15}/><span>Latest investigation: <b>{lastResult.status.replaceAll('_',' ')}</b></span><button onClick={()=>void say(speechRecommendation(lastResult))}><Volume2 size={14}/> Read</button></div>}
       {lastCheckinId&&<div className="voice-mini">Last saved check-in: {lastCheckinId}</div>}

@@ -11,7 +11,7 @@ import {
 } from 'recharts';
 import type { Crew } from '../data/fixtures';
 import type { SavedCheckIn } from '../types/api';
-import { orderedRecords, visualSymptoms } from '../data/bodyMonitoring';
+import { orderedRecords } from '../data/bodyMonitoring';
 import { baselineDifference, completeness } from '../data/missionMonitoring';
 
 type Props = {
@@ -19,9 +19,7 @@ type Props = {
   records: SavedCheckIn[];
   loading: boolean;
   error: string;
-  onRegion: (region: string, id?: string) => void;
   onReplay?: (id: string) => void;
-  onInvestigate: (id: string) => void;
 };
 
 const show = (v: number | string | null | undefined, unit = '') =>
@@ -34,9 +32,7 @@ export function MissionHealthTimeline({
   records,
   loading,
   error,
-  onRegion,
   onReplay,
-  onInvestigate,
 }: Props) {
   const [filter, setFilter] = useState<'hr' | 'sleep' | 'symptoms'>('hr');
   const [limit, setLimit] = useState(7);
@@ -254,8 +250,11 @@ export function MissionHealthTimeline({
                     className={`mht-obs-row ${isSelected ? 'selected' : ''}`}
                     type="button"
                     aria-pressed={isSelected}
-                    aria-label={`Inspect observation ${r.id}`}
-                    onClick={() => setSelectedId(r.id)}
+                    aria-label={`Replay observation ${r.id} on BodyGraph`}
+                    onClick={() => {
+                      setSelectedId(r.id);
+                      onReplay?.(r.id);
+                    }}
                   >
                     <span className="mht-obs-idx">#{i + 1}</span>
                     <time className="mht-obs-time" dateTime={r.recorded_at}>
@@ -273,114 +272,6 @@ export function MissionHealthTimeline({
           </ol>
         </div>
 
-        <div className="mht-right-col">
-          {selected ? (
-            <div
-              aria-label="Selected timeline observation"
-              className="mht-detail-card"
-            >
-              <div className="mht-detail-head">
-                <div>
-                  <span className="mht-tile-label">SELECTED OBSERVATION</span>
-                  <h4>
-                    {crew.id} · {selected.id}
-                  </h4>
-                </div>
-                <time className="mht-detail-time" dateTime={selected.recorded_at}>
-                  {date(selected.recorded_at)}
-                </time>
-              </div>
-
-              <div className="mht-detail-metrics">
-                <div>
-                  <span>HR</span>
-                  <strong className={selected.hr == null ? 'unknown-val' : ''}>
-                    {show(selected.hr, ' bpm')}
-                  </strong>
-                </div>
-                <div>
-                  <span>SLEEP</span>
-                  <strong
-                    className={selected.sleep == null ? 'unknown-val' : ''}
-                  >
-                    {show(selected.sleep, ' h')}
-                  </strong>
-                </div>
-                <div>
-                  <span>BP</span>
-                  <strong className={selected.bp == null ? 'unknown-val' : ''}>
-                    {show(selected.bp, ' mmHg')}
-                  </strong>
-                </div>
-              </div>
-
-              <div className="mht-detail-meta">
-                <div>
-                  <span>Symptoms:</span>{' '}
-                  <b>{selected.symptoms.join(', ') || 'None reported'}</b>
-                </div>
-                {visualSymptoms(selected).length > 0 && (
-                  <div>
-                    <span>Recorded visual symptoms:</span>{' '}
-                    <b>{visualSymptoms(selected).join(', ')}</b>
-                  </div>
-                )}
-                <div>
-                  <span>Source:</span>{' '}
-                  <b>{selected.provenance} · Synthetic</b>
-                </div>
-              </div>
-
-              <div className="mht-detail-actions">
-                {onReplay && (
-                  <button
-                    className="hairline-pill-btn"
-                    type="button"
-                    onClick={() => onReplay(selected.id)}
-                  >
-                    Replay on BodyGraph
-                  </button>
-                )}
-                <button
-                  className="hairline-pill-btn"
-                  type="button"
-                  onClick={() => onRegion('heart', selected.id)}
-                >
-                  Open Heart Monitoring
-                </button>
-                <button
-                  className="hairline-pill-btn"
-                  type="button"
-                  onClick={() => onRegion('brain', selected.id)}
-                >
-                  Open Brain/Sleep Monitoring
-                </button>
-                <button
-                  className="hairline-pill-btn"
-                  type="button"
-                  onClick={() => onRegion('eye_l', selected.id)}
-                >
-                  Open Eye Evidence
-                </button>
-                <button
-                  className="hairline-pill-btn active"
-                  type="button"
-                  onClick={() => onInvestigate(selected.id)}
-                >
-                  Investigate Selected Observation
-                </button>
-              </div>
-
-              <p className="mht-footnote">
-                BodyGraph replay shows the exact selected record; return to
-                latest for current monitoring. Differences from baseline
-                describe observations, not diagnoses.
-              </p>
-            </div>
-          ) : (
-            <div className="mht-detail-card">No saved check-in available.</div>
-          )}
-        </div>
       </div>
     </section>
   );

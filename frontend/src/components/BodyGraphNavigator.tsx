@@ -130,33 +130,9 @@ export function BodyGraphNavigator({
               onClick={() => onPart(system.part)}
             >
               <span>{system.short}</span>
-              <span
-                className="bodygraph-evidence-marks"
-                aria-label={evidenceLabels(state).join('; ')}
-              >
-                {state.recorded && <i className="evidence-recorded">●</i>}
-                {state.changed && <i className="evidence-change">◇</i>}
-                {state.missing && <i className="evidence-missing">?</i>}
-                {state.review && <i className="evidence-review">↗</i>}
-              </span>
             </button>
           );
         })}
-      </div>
-
-      <div className="bgn-legend" aria-label="Evidence map legend">
-        <span>
-          <i className="evidence-recorded">●</i> Recorded
-        </span>
-        <span>
-          <i className="evidence-change">◇</i> Changed
-        </span>
-        <span>
-          <i className="evidence-missing">?</i> Missing
-        </span>
-        <span>
-          <i className="evidence-review">↗</i> Review
-        </span>
       </div>
 
       <div className="bgn-accordions">
