@@ -45,7 +45,7 @@ export class OfflineRecognizer {
 
   async start() {
     if (this.active) return;
-    const status = await fetch('/mednav-voice/status');
+    const status = await fetch(`${VOICE_BASE}/status`);
     if (!status.ok) throw new Error('Local Faster-Whisper service unavailable. Start the MEDNAV voice service.');
     const info = await status.json() as { model?: string; available?: boolean };
     if (info.available === false || info.model !== 'Systran/faster-whisper-tiny.en') {
@@ -110,7 +110,7 @@ export class OfflineRecognizer {
     this.controller = controller;
     this.busy = true;
     try {
-      const result = await fetch('/mednav-voice/transcribe?segment_mode=true', {
+      const result = await fetch(`${VOICE_BASE}/transcribe?segment_mode=true', {
         method: 'POST', headers: { 'Content-Type': 'audio/wav' },
         body: wav(samples, this.context?.sampleRate ?? 16000), signal: controller.signal,
       });
