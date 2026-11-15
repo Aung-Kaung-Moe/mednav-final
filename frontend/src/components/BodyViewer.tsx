@@ -121,32 +121,12 @@ export function BodyViewer({
         </div>
       </div>
 
-      <div className="mode-controls" role="group" aria-label="Anatomy layers">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            className={`mode-btn ${layerMode === m.id ? 'active' : ''}`}
-            onClick={() => setLayerMode(m.id)}
-          >
-            {m.name}
-          </button>
-        ))}
-      </div>
-
       <div className="body-canvas" ref={canvasRef} />
 
       <div className="side-axis" aria-hidden="true">
         <span>H</span>
         <div />
         <span>F</span>
-      </div>
-
-      <div className="floating-label floating-label-top">
-        <span className="crosshair">+</span> NEURAL / MUSCULOSKELETAL
-      </div>
-      <div className="floating-label floating-label-mid">
-        <span className="crosshair">+</span> RADIATION &amp; MICROGRAVITY
       </div>
 
       {hoverName && (
@@ -209,6 +189,18 @@ export function BodyViewer({
           >
             F
           </button>
+        </div>
+        <div className="mode-controls" role="group" aria-label="Anatomy layers">
+          {MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`mode-btn ${layerMode === m.id ? 'active' : ''}`}
+              onClick={() => setLayerMode(m.id)}
+            >
+              {m.name}
+            </button>
+          ))}
         </div>
       </div>
 

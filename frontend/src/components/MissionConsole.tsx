@@ -597,7 +597,7 @@ export function MissionConsole({
                 </div>
 
                 <h3>{view.nextCheckTitle}</h3>
-                <p>{view.selectedExplanation}</p>
+                <p title={view.selectedExplanation}>{view.selectedExplanation}</p>
 
                 <div className="nc-status-chips">
                   <div className="nc-chip">
